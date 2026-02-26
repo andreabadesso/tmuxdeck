@@ -5,13 +5,18 @@ import { TerminalPool } from '../components/TerminalPool';
 import type { TerminalPoolHandle } from '../components/TerminalPool';
 import { SessionSwitcher } from '../components/SessionSwitcher';
 import { KeyboardHelp } from '../components/KeyboardHelp';
+import { FileViewer } from '../components/FileViewer';
+import { FoldedSessionPreview } from '../components/FoldedSessionPreview';
 import { Monitor, Maximize2, Eye } from 'lucide-react';
 import { useTerminalPool } from '../hooks/useTerminalPool';
 import { useWindowShortcuts } from '../hooks/useWindowShortcuts';
+import { useSessionExpandedState } from '../hooks/useSessionExpandedState';
 import { api } from '../api/client';
 import { logout } from '../api/httpClient';
-import type { SessionTarget, Container, Settings } from '../types';
+import type { SessionTarget, Selection, FoldedSessionTarget, Container, ContainerListResponse, Settings, ClaudeNotification } from '../types';
+import { isWindowSelection, isFoldedSelection } from '../types';
 import { sortSessionsByOrder } from '../utils/sessionOrder';
+import { getContainerExpanded } from '../utils/sidebarState';
 
 function getInitialSession(): SessionTarget | null {
   try {
@@ -26,11 +31,13 @@ function getInitialSession(): SessionTarget | null {
 }
 
 export function MainPage() {
-  const [selectedSession, setSelectedSession] = useState<SessionTarget | null>(getInitialSession);
+  const [selectedSession, setSelectedSession] = useState<Selection | null>(getInitialSession);
   const [previewSession, setPreviewSession] = useState<SessionTarget | null>(null);
+  const { isSessionExpanded, setSessionExpanded } = useSessionExpandedState();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [viewingFile, setViewingFile] = useState<{ containerId: string; path: string } | null>(null);
   const poolRef = useRef<TerminalPoolHandle>(null);
   const previewTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const clearTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -53,9 +60,11 @@ export function MainPage() {
   // Derive what to display
   const displayedSession = previewSession ?? selectedSession;
   const isPreview = previewSession !== null;
+  const isFolded = displayedSession !== null && isFoldedSelection(displayedSession);
 
   // Derive activeKey — must match useTerminalPool's makeKey (container+session only)
-  const activeKey = displayedSession
+  // When folded, hide all terminals
+  const activeKey = displayedSession && !isFolded
     ? `${displayedSession.containerId}-${displayedSession.sessionName}`
     : null;
 
@@ -68,7 +77,7 @@ export function MainPage() {
   // useLayoutEffect avoids a visible blank frame.
   const poolEnsure = pool.ensure;
   useLayoutEffect(() => {
-    if (displayedSession) {
+    if (displayedSession && !isFoldedSelection(displayedSession)) {
       poolEnsure(displayedSession);
     }
   }, [displayedSession, poolEnsure]);
@@ -108,6 +117,7 @@ export function MainPage() {
 
     if (
       selectedSession &&
+      isWindowSelection(selectedSession) &&
       selectedSession.containerId === containerId &&
       selectedSession.sessionName === sessionName &&
       selectedSession.windowIndex === windowIndex
@@ -145,6 +155,11 @@ export function MainPage() {
     requestAnimationFrame(() => poolRef.current?.focusActive());
   }, [clearPreviewImmediate, pool]);
 
+  const selectFoldedSession = useCallback((target: FoldedSessionTarget) => {
+    clearPreviewImmediate();
+    setSelectedSession(target);
+  }, [clearPreviewImmediate]);
+
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
@@ -155,7 +170,7 @@ export function MainPage() {
 
   // Browser notifications for bell flags
   useEffect(() => {
-    const containers: Container[] | undefined = queryClient.getQueryData(['containers']);
+    const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
     if (!containers) return;
 
     const currentBellKeys = new Set<string>();
@@ -169,6 +184,7 @@ export function MainPage() {
             if (!prevBellKeysRef.current.has(key)) {
               const isDisplayed =
                 displayedSession &&
+                isWindowSelection(displayedSession) &&
                 displayedSession.containerId === c.id &&
                 displayedSession.sessionName === s.name &&
                 displayedSession.windowIndex === w.index;
@@ -199,6 +215,35 @@ export function MainPage() {
     return () => window.removeEventListener('click', requestPermission);
   }, []);
 
+  // SSE listener for Claude Code notifications
+  useEffect(() => {
+    const evtSource = new EventSource('/api/v1/notifications/stream');
+
+    evtSource.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed.event === 'notification' && parsed.data) {
+          const notif: ClaudeNotification = parsed.data;
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const n = new window.Notification(notif.title || 'Claude Code', {
+              body: notif.message || 'Needs attention',
+              tag: `claude-${notif.id}`,
+            });
+            n.onclick = () => {
+              window.focus();
+              // Navigate to the relevant terminal
+              if (notif.containerId && notif.tmuxSession != null) {
+                selectSession(notif.containerId, notif.tmuxSession, notif.tmuxWindow ?? 0);
+              }
+            };
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    return () => evtSource.close();
+  }, [selectSession]);
+
   const escTimestampRef = useRef<number>(0);
 
   useEffect(() => {
@@ -216,17 +261,18 @@ export function MainPage() {
         const digit = digitMatch[1];
         e.preventDefault();
         if (e.altKey) {
-          if (selectedSession) assignDigit(digit, selectedSession);
+          // Ctrl+Alt+N: assign digit — only when a window is selected
+          if (selectedSession && isWindowSelection(selectedSession)) assignDigit(digit, selectedSession);
         } else {
           const target = shortcutMapRef.current[digit];
           if (target) selectSession(target.containerId, target.sessionName, target.windowIndex);
         }
       }
-      // Alt+1-9: jump to Nth window in current session
+      // Alt+1-9: jump to Nth window in current session — skip if folded
       if (digitMatch && e.altKey && !e.ctrlKey && !e.metaKey) {
         const digit = parseInt(digitMatch[1], 10);
-        if (digit >= 1 && digit <= 9 && selectedSession) {
-          const containers: Container[] | undefined = queryClient.getQueryData(['containers']);
+        if (digit >= 1 && digit <= 9 && selectedSession && isWindowSelection(selectedSession)) {
+          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
           if (containers) {
             const container = containers.find((c) => c.id === selectedSession.containerId);
             const session = container?.sessions.find((s) => s.name === selectedSession.sessionName);
@@ -238,30 +284,151 @@ export function MainPage() {
           }
         }
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const containers: Container[] | undefined = queryClient.getQueryData(['containers']);
-        if (containers && selectedSession) {
+      // Shift+Ctrl+Up/Down: swap (move) current window within session — skip if folded
+      if (e.shiftKey && (e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (selectedSession && isFoldedSelection(selectedSession)) return;
+        const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+        if (containers && selectedSession && isWindowSelection(selectedSession)) {
           e.preventDefault();
-          const allWindows: SessionTarget[] = [];
-          for (const c of containers) {
-            if (c.status !== 'running' && !c.isHost && !c.isLocal) continue;
-            const ordered = sortSessionsByOrder(c.sessions, c.id);
-            for (const s of ordered) {
-              for (const w of s.windows) {
-                allWindows.push({ containerId: c.id, sessionName: s.name, windowIndex: w.index });
+          const container = containers.find((c) => c.id === selectedSession.containerId);
+          const session = container?.sessions.find((s) => s.name === selectedSession.sessionName);
+          if (session) {
+            const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
+            const curPos = sortedWindows.findIndex((w) => w.index === selectedSession.windowIndex);
+            if (curPos !== -1) {
+              const targetPos = e.key === 'ArrowUp' ? curPos - 1 : curPos + 1;
+              if (targetPos >= 0 && targetPos < sortedWindows.length) {
+                const currentWindowIndex = sortedWindows[curPos].index;
+                const targetWindowIndex = sortedWindows[targetPos].index;
+                api.swapWindows(selectedSession.containerId, session.id, currentWindowIndex, targetWindowIndex);
+                selectSession(selectedSession.containerId, selectedSession.sessionName, targetWindowIndex);
+                // Swap digit shortcuts to follow their windows
+                const key1 = `${selectedSession.containerId}:${selectedSession.sessionName}:${currentWindowIndex}`;
+                const key2 = `${selectedSession.containerId}:${selectedSession.sessionName}:${targetWindowIndex}`;
+                const d1 = digitByTargetKey[key1];
+                const d2 = digitByTargetKey[key2];
+                if (d1) assignDigit(d1, { containerId: selectedSession.containerId, sessionName: selectedSession.sessionName, windowIndex: targetWindowIndex });
+                if (d2) assignDigit(d2, { containerId: selectedSession.containerId, sessionName: selectedSession.sessionName, windowIndex: currentWindowIndex });
+                queryClient.setQueryData<ContainerListResponse>(['containers'], (old) => {
+                  if (!old) return old;
+                  return {
+                    ...old,
+                    containers: old.containers.map((c) =>
+                      c.id !== selectedSession.containerId ? c : {
+                        ...c,
+                        sessions: c.sessions.map((s) =>
+                          s.id !== session.id ? s : {
+                            ...s,
+                            windows: s.windows.map((w) => {
+                              if (w.index === currentWindowIndex) return { ...w, index: targetWindowIndex };
+                              if (w.index === targetWindowIndex) return { ...w, index: currentWindowIndex };
+                              return w;
+                            }).sort((a, b) => a.index - b.index),
+                          }
+                        ),
+                      }
+                    ),
+                  };
+                });
               }
             }
           }
-          if (allWindows.length > 0) {
-            const curIdx = allWindows.findIndex(
-              (t) => t.containerId === selectedSession.containerId &&
-                     t.sessionName === selectedSession.sessionName &&
-                     t.windowIndex === selectedSession.windowIndex
-            );
+        }
+        return;
+      }
+      // Ctrl+Left: fold current session
+      if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft' && !e.shiftKey) {
+        if (selectedSession) {
+          e.preventDefault();
+          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+          if (containers) {
+            // Find the session for the current selection
+            const cId = selectedSession.containerId;
+            const container = containers.find((c) => c.id === cId);
+            if (container) {
+              let session;
+              if (isFoldedSelection(selectedSession)) {
+                session = container.sessions.find((s) => s.id === selectedSession.sessionId);
+              } else {
+                session = container.sessions.find((s) => s.name === selectedSession.sessionName);
+              }
+              if (session && !isFoldedSelection(selectedSession)) {
+                // Already expanded → fold it
+                setSessionExpanded(cId, session.id, false);
+                selectFoldedSession({
+                  containerId: cId,
+                  sessionName: session.name,
+                  sessionId: session.id,
+                  folded: true,
+                });
+              }
+            }
+          }
+        }
+        return;
+      }
+      // Ctrl+Right: unfold current session
+      if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowRight' && !e.shiftKey) {
+        if (selectedSession && isFoldedSelection(selectedSession)) {
+          e.preventDefault();
+          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+          if (containers) {
+            const container = containers.find((c) => c.id === selectedSession.containerId);
+            const session = container?.sessions.find((s) => s.id === selectedSession.sessionId);
+            if (session) {
+              setSessionExpanded(selectedSession.containerId, session.id, true);
+              const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
+              if (sortedWindows.length > 0) {
+                selectSession(selectedSession.containerId, session.name, sortedWindows[0].index);
+              }
+            }
+          }
+        }
+        return;
+      }
+      // Ctrl+Up/Down: navigate through windows AND folded sessions
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+        if (containers && selectedSession) {
+          e.preventDefault();
+          const allItems: Selection[] = [];
+          for (const c of containers) {
+            if (c.status !== 'running' && !c.isHost && !c.isLocal) continue;
+            if ((getContainerExpanded(c.id) ?? true) === false) continue;
+            const ordered = sortSessionsByOrder(c.sessions, c.id);
+            for (const s of ordered) {
+              if (!isSessionExpanded(c.id, s.id)) {
+                // Folded → push one FoldedSessionTarget
+                allItems.push({ containerId: c.id, sessionName: s.name, sessionId: s.id, folded: true });
+              } else {
+                // Expanded → push individual windows
+                const sortedWindows = [...s.windows].sort((a, b) => a.index - b.index);
+                for (const w of sortedWindows) {
+                  allItems.push({ containerId: c.id, sessionName: s.name, windowIndex: w.index });
+                }
+              }
+            }
+          }
+          if (allItems.length > 0) {
+            const curIdx = allItems.findIndex((t) => {
+              if (isFoldedSelection(selectedSession) && isFoldedSelection(t)) {
+                return t.containerId === selectedSession.containerId && t.sessionId === selectedSession.sessionId;
+              }
+              if (isWindowSelection(selectedSession) && isWindowSelection(t)) {
+                return t.containerId === selectedSession.containerId &&
+                       t.sessionName === selectedSession.sessionName &&
+                       t.windowIndex === selectedSession.windowIndex;
+              }
+              return false;
+            });
             const delta = e.key === 'ArrowDown' ? 1 : -1;
-            const nextIdx = curIdx === -1 ? 0 : (curIdx + delta + allWindows.length) % allWindows.length;
-            const next = allWindows[nextIdx];
-            selectSession(next.containerId, next.sessionName, next.windowIndex);
+            const nextIdx = curIdx === -1 ? 0 : (curIdx + delta + allItems.length) % allItems.length;
+            const next = allItems[nextIdx];
+            if (isFoldedSelection(next)) {
+              selectFoldedSession(next);
+            } else {
+              selectSession(next.containerId, next.sessionName, next.windowIndex);
+            }
           }
         }
       }
@@ -285,7 +452,7 @@ export function MainPage() {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [switcherOpen, helpOpen, clearPreviewImmediate, selectedSession, previewSession, assignDigit, selectSession, queryClient]);
+  }, [switcherOpen, helpOpen, clearPreviewImmediate, selectedSession, previewSession, assignDigit, selectSession, selectFoldedSession, setSessionExpanded, isSessionExpanded, queryClient, digitByTargetKey]);
 
   return (
     <div className="flex h-full w-full">
@@ -297,10 +464,55 @@ export function MainPage() {
         onPreviewEnd={clearPreview}
         digitByTargetKey={digitByTargetKey}
         assignDigit={assignDigit}
+        isSessionExpanded={isSessionExpanded}
+        setSessionExpanded={setSessionExpanded}
       />
       <div className="flex-1 bg-[#0a0a0a] flex flex-col min-w-0">
+        {displayedSession && (() => {
+          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+          const container = containers?.find((c) => c.id === displayedSession.containerId);
+          if (isFolded) {
+            return (
+              <div className="h-6 flex items-center px-3 text-[11px] text-gray-500 bg-[#0e0e0e] border-b border-gray-800/40 shrink-0 select-none gap-1">
+                <span className="text-gray-400">{container?.displayName ?? displayedSession.containerId}</span>
+                <span className="text-gray-700">/</span>
+                <span className="text-gray-400">{displayedSession.sessionName}</span>
+                <span className="text-gray-600 ml-1">(folded)</span>
+              </div>
+            );
+          }
+          const winSel = displayedSession as SessionTarget;
+          const session = container?.sessions.find((s) => s.name === winSel.sessionName);
+          const win = session?.windows.find((w) => w.index === winSel.windowIndex);
+          return (
+            <div className="h-6 flex items-center px-3 text-[11px] text-gray-500 bg-[#0e0e0e] border-b border-gray-800/40 shrink-0 select-none gap-1">
+              <span className="text-gray-400">{container?.displayName ?? winSel.containerId}</span>
+              <span className="text-gray-700">/</span>
+              <span className="text-gray-400">{winSel.sessionName}</span>
+              <span className="text-gray-700">/</span>
+              <span className="text-gray-400">{winSel.windowIndex}: {win?.name ?? '?'}</span>
+            </div>
+          );
+        })()}
         <div className="flex-1 min-h-0 relative">
-          <TerminalPool ref={poolRef} entries={pool.entries} activeKey={activeKey} />
+          <TerminalPool
+            ref={poolRef}
+            entries={pool.entries}
+            activeKey={activeKey}
+            onOpenFile={(containerId, path) => setViewingFile({ containerId, path })}
+          />
+          {isFolded && isFoldedSelection(displayedSession!) && (
+            <div className="absolute inset-0 z-20">
+              <FoldedSessionPreview
+                selection={displayedSession as FoldedSessionTarget}
+                onUnfoldAndSelect={(windowIndex) => {
+                  const sel = displayedSession as FoldedSessionTarget;
+                  setSessionExpanded(sel.containerId, sel.sessionId, true);
+                  selectSession(sel.containerId, sel.sessionName, windowIndex);
+                }}
+              />
+            </div>
+          )}
           {!displayedSession && (
             <div className="absolute inset-0 z-20 flex items-center justify-center">
               <div className="text-center text-gray-600">
@@ -319,7 +531,7 @@ export function MainPage() {
               Preview
             </div>
           )}
-          {displayedSession && (
+          {displayedSession && !isFolded && (
             <button
               onClick={() => {
                 poolRef.current?.refitActive();
@@ -349,6 +561,14 @@ export function MainPage() {
       )}
 
       {helpOpen && <KeyboardHelp onClose={() => setHelpOpen(false)} />}
+
+      {viewingFile && (
+        <FileViewer
+          containerId={viewingFile.containerId}
+          path={viewingFile.path}
+          onClose={() => { setViewingFile(null); requestAnimationFrame(() => poolRef.current?.focusActive()); }}
+        />
+      )}
     </div>
   );
 }

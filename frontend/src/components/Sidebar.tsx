@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Plus,
   Settings,
-  FileCode,
+  HelpCircle,
   PanelLeftClose,
   PanelLeftOpen,
   AlertTriangle,
@@ -12,23 +12,30 @@ import {
 import { api } from '../api/client';
 import { ContainerNode } from './ContainerNode';
 import { NewContainerDialog } from './NewContainerDialog';
-import type { SessionTarget } from '../types';
+import type { SessionTarget, Selection } from '../types';
+import { getSidebarCollapsed, saveSidebarCollapsed, getSectionsCollapsed, saveSectionsCollapsed } from '../utils/sidebarState';
 
 interface SidebarProps {
   collapsed?: boolean;
-  selectedSession?: SessionTarget | null;
+  selectedSession?: Selection | null;
   previewSession?: SessionTarget | null;
   onSelectSession?: (containerId: string, sessionName: string, windowIndex: number) => void;
   onPreviewSession?: (containerId: string, sessionName: string, windowIndex: number) => void;
   onPreviewEnd?: () => void;
   digitByTargetKey?: Record<string, string>;
   assignDigit?: (digit: string, target: SessionTarget) => void;
+  isSessionExpanded?: (containerId: string, sessionId: string) => boolean;
+  setSessionExpanded?: (containerId: string, sessionId: string, expanded: boolean) => void;
 }
 
-export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewSession, onSelectSession, onPreviewSession, onPreviewEnd, digitByTargetKey, assignDigit }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(initialCollapsed ?? false);
+export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewSession, onSelectSession, onPreviewSession, onPreviewEnd, digitByTargetKey, assignDigit, isSessionExpanded, setSessionExpanded }: SidebarProps) {
+  const [collapsed, setCollapsedRaw] = useState(() => initialCollapsed ?? getSidebarCollapsed());
+  const setCollapsed = (v: boolean) => { setCollapsedRaw(v); saveSidebarCollapsed(v); };
   const [showNewContainer, setShowNewContainer] = useState(false);
-  const [sectionsCollapsed, setSectionsCollapsed] = useState<Record<string, boolean>>({});
+  const [sectionsCollapsed, setSectionsCollapsedRaw] = useState<Record<string, boolean>>(getSectionsCollapsed);
+  const setSectionsCollapsed = (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
+    setSectionsCollapsedRaw((prev) => { const next = updater(prev); saveSectionsCollapsed(next); return next; });
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const isMainPage = location.pathname === '/';
@@ -38,11 +45,14 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
     navigate('/', { state: { selectSession: { containerId, sessionName, windowIndex } } });
   });
 
-  const { data: containers = [], error, refetch } = useQuery({
+  const { data, error, refetch } = useQuery({
     queryKey: ['containers'],
     queryFn: () => api.listContainers(),
     retry: 2,
+    refetchInterval: 3000,
   });
+
+  const { containers = [], dockerError } = data ?? {};
 
   const special = containers.filter((c) => c.isHost || c.isLocal);
   const running = containers.filter((c) => c.status === 'running' && !c.isHost && !c.isLocal);
@@ -60,7 +70,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
         </button>
         <div className="flex-1" />
         <button
-          onClick={() => navigate('/settings/templates')}
+          onClick={() => navigate('/settings')}
           className={`p-1.5 rounded hover:bg-gray-800 transition-colors ${
             location.pathname.startsWith('/settings') ? 'text-blue-400' : 'text-gray-400 hover:text-gray-200'
           }`}
@@ -80,7 +90,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             onClick={() => navigate('/')}
             className="font-semibold text-sm text-gray-200 hover:text-white transition-colors"
           >
-            TmuxDeck
+            TmuxDeck <span className="text-[10px] font-normal text-gray-600">v1.0</span>
           </button>
           <div className="flex items-center gap-1">
             <button
@@ -118,6 +128,17 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               </button>
             </div>
           )}
+          {dockerError && (
+            <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-yellow-900/30 border border-yellow-800/50">
+              <div className="flex items-center gap-2 text-yellow-400 text-xs font-medium">
+                <AlertTriangle size={13} className="shrink-0" />
+                Docker unavailable
+              </div>
+              <p className="text-[11px] text-yellow-400/70 mt-1">
+                {dockerError}
+              </p>
+            </div>
+          )}
           {special.map((container) => (
             <ContainerNode
               key={container.id}
@@ -130,6 +151,8 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               onRefresh={refetch}
               digitByTargetKey={digitByTargetKey}
               assignDigit={assignDigit}
+              isSessionExpanded={isSessionExpanded}
+              setSessionExpanded={setSessionExpanded}
               sectionCollapsed={sectionsCollapsed.special}
               onToggleSection={() => setSectionsCollapsed((s) => ({ ...s, special: !s.special }))}
             />
@@ -149,6 +172,8 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               onRefresh={refetch}
               digitByTargetKey={digitByTargetKey}
               assignDigit={assignDigit}
+              isSessionExpanded={isSessionExpanded}
+              setSessionExpanded={setSessionExpanded}
             />
           ))}
           {stopped.length > 0 && running.length > 0 && (
@@ -166,6 +191,8 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               onRefresh={refetch}
               digitByTargetKey={digitByTargetKey}
               assignDigit={assignDigit}
+              isSessionExpanded={isSessionExpanded}
+              setSessionExpanded={setSessionExpanded}
             />
           ))}
           {containers.length === 0 && (
@@ -184,26 +211,26 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
 
         <div className="border-t border-gray-800 p-2 flex flex-col gap-1">
           <button
-            onClick={() => navigate('/settings/templates')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
-              location.pathname === '/settings/templates'
-                ? 'bg-gray-800 text-blue-400'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-            }`}
-          >
-            <FileCode size={15} />
-            Templates
-          </button>
-          <button
             onClick={() => navigate('/settings')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
-              location.pathname === '/settings'
+              location.pathname === '/settings' || location.pathname === '/settings/templates'
                 ? 'bg-gray-800 text-blue-400'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
             }`}
           >
             <Settings size={15} />
             Settings
+          </button>
+          <button
+            onClick={() => navigate('/settings/help')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+              location.pathname === '/settings/help'
+                ? 'bg-gray-800 text-blue-400'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+            }`}
+          >
+            <HelpCircle size={15} />
+            Help
           </button>
         </div>
       </div>

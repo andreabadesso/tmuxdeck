@@ -6,6 +6,7 @@ import { PinScreen } from './components/PinScreen';
 import { MainPage } from './pages/MainPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { HelpPage } from './pages/HelpPage';
 import { useAuth } from './hooks/useAuth';
 import { setOnAuthLost } from './api/httpClient';
 
@@ -56,6 +57,7 @@ function App() {
               <Route path="/" element={<MainPage />} />
               <Route path="/settings/templates" element={<TemplatesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/settings/help" element={<HelpPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

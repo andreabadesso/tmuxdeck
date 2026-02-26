@@ -87,7 +87,7 @@ class TmuxManager:
                 "-t",
                 session_name,
                 "-F",
-                "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}",
+                "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
             ],
         )
         windows = []
@@ -106,6 +106,8 @@ class TmuxManager:
                     "panes": int(parts[3]) if parts[3].isdigit() else 1,
                     "bell": parts[4] == "1" if len(parts) > 4 else False,
                     "activity": parts[5] == "1" if len(parts) > 5 else False,
+                    "command": parts[6] if len(parts) > 6 else "",
+                    "pane_status": parts[7] if len(parts) > 7 else "",
                 }
             )
         return windows
@@ -165,6 +167,12 @@ class TmuxManager:
             container_id,
             ["tmux", "set-option", "-s", "extended-keys", "always"],
         )
+        # Allow DCS passthrough so tmuxdeck-open can send OSC sequences
+        # through tmux to xterm.js in the browser.
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-g", "allow-passthrough", "on"],
+        )
         # Return the new session info
         return {
             "id": make_session_id(container_id, session_name),
@@ -173,6 +181,7 @@ class TmuxManager:
                 {
                     "index": 0, "name": "bash", "active": True,
                     "panes": 1, "bell": False, "activity": False,
+                    "command": "bash", "pane_status": "",
                 },
             ],
             "created": datetime.now(UTC).isoformat(),
@@ -240,6 +249,10 @@ class TmuxManager:
                 await self._run_cmd(
                     container_id,
                     ["tmux", "set-option", "-s", "extended-keys", "always"],
+                )
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-g", "allow-passthrough", "on"],
                 )
                 return
         await self.create_session(container_id, session_name)

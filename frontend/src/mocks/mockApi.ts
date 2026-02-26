@@ -1,6 +1,7 @@
 import type { ApiClient } from '../api/client';
 import type {
   Container,
+  ContainerListResponse,
   Template,
   Settings,
   CreateContainerRequest,
@@ -25,9 +26,9 @@ let nextSessionId = 100;
 
 export const mockApi: ApiClient = {
   // Containers
-  async listContainers() {
+  async listContainers(): Promise<ContainerListResponse> {
     await delay();
-    return JSON.parse(JSON.stringify(containers));
+    return { containers: JSON.parse(JSON.stringify(containers)) };
   },
 
   async createContainer(req: CreateContainerRequest) {
@@ -41,7 +42,7 @@ export const mockApi: ApiClient = {
       status: 'running',
       image: template ? `${template.name}:latest` : 'unknown:latest',
       templateId: req.templateId,
-      sessions: [{ id: `s${nextSessionId++}`, name: 'main', windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false }], created: new Date().toISOString(), attached: false }],
+      sessions: [{ id: `s${nextSessionId++}`, name: 'main', windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }], created: new Date().toISOString(), attached: false }],
       createdAt: new Date().toISOString(),
     };
     containers.push(container);
@@ -102,7 +103,7 @@ export const mockApi: ApiClient = {
     const session: TmuxSession = {
       id: `s${nextSessionId++}`,
       name: req.name,
-      windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false }],
+      windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }],
       created: new Date().toISOString(),
       attached: false,
     };
@@ -154,6 +155,8 @@ export const mockApi: ApiClient = {
       panes: 1,
       bell: false,
       activity: false,
+      command: 'bash',
+      paneStatus: '',
     };
     s.windows.push(win);
     return JSON.parse(JSON.stringify(s.windows));

@@ -6,6 +6,23 @@ export interface SessionTarget {
   windowIndex: number;
 }
 
+export interface FoldedSessionTarget {
+  containerId: string;
+  sessionName: string;
+  sessionId: string;
+  folded: true;
+}
+
+export type Selection = SessionTarget | FoldedSessionTarget;
+
+export function isWindowSelection(s: Selection): s is SessionTarget {
+  return !('folded' in s);
+}
+
+export function isFoldedSelection(s: Selection): s is FoldedSessionTarget {
+  return 'folded' in s && s.folded === true;
+}
+
 export interface TmuxWindow {
   index: number;
   name: string;
@@ -13,6 +30,8 @@ export interface TmuxWindow {
   panes: number;
   bell: boolean;
   activity: boolean;
+  command?: string;
+  paneStatus?: string;
 }
 
 export interface TmuxSession {
@@ -35,6 +54,11 @@ export interface Container {
   templateId?: string;
   sessions: TmuxSession[];
   createdAt: string;
+}
+
+export interface ContainerListResponse {
+  containers: Container[];
+  dockerError?: string;
 }
 
 export interface Template {
@@ -64,6 +88,21 @@ export interface Settings {
   defaultVolumeMounts: string[];
   sshKeyPath: string;
   terminalPoolSize?: number;
+  telegramRegistrationSecret?: string;
+  telegramNotificationTimeoutSecs?: number;
+}
+
+export interface ClaudeNotification {
+  id: string;
+  message: string;
+  title: string;
+  notificationType: string;
+  sessionId: string;
+  containerId: string;
+  tmuxSession: string;
+  tmuxWindow: number;
+  createdAt: string;
+  status: string;
 }
 
 export interface CreateContainerRequest {

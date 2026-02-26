@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from .. import store
 from ..config import config
 from ..schemas import (
+    ContainerListResponse,
     ContainerResponse,
     CreateContainerRequest,
     RenameContainerRequest,
@@ -30,6 +32,28 @@ from ..services.tmux_manager import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/containers", tags=["containers"])
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
+
+
+def _read_script(name: str) -> bytes:
+    """Read a script file from the scripts directory."""
+    return (_SCRIPTS_DIR / name).read_bytes()
+
+
+async def _inject_scripts(dm: "DockerManager", container_id: str) -> None:
+    """Inject and run setup scripts into a newly started container."""
+    # Inject both scripts first
+    install_script = _read_script("tmuxdeck-install")
+    await dm.put_file(container_id, "/usr/local/bin", "tmuxdeck-install", install_script)
+    await dm.exec_command(container_id, ["chmod", "+x", "/usr/local/bin/tmuxdeck-install"])
+
+    open_script = _read_script("tmuxdeck-open")
+    await dm.put_file(container_id, "/usr/local/bin", "tmuxdeck-open", open_script)
+    await dm.exec_command(container_id, ["chmod", "+x", "/usr/local/bin/tmuxdeck-open"])
+
+    # Now run the install script (tmuxdeck-open is already in place)
+    await dm.exec_command(container_id, ["sh", "/usr/local/bin/tmuxdeck-install"])
 
 
 async def _build_local_container(tm: TmuxManager) -> ContainerResponse:
@@ -93,7 +117,7 @@ def _build_container_response(
     )
 
 
-@router.get("", response_model=list[ContainerResponse])
+@router.get("", response_model=ContainerListResponse)
 async def list_containers():
     tm = TmuxManager.get()
 
@@ -107,12 +131,13 @@ async def list_containers():
         results.append(host)
 
     # Docker containers (gracefully skip if Docker is unavailable)
+    docker_error: str | None = None
     try:
         dm = DockerManager.get()
         docker_containers = await dm.list_containers()
-    except Exception:
-        logger.debug("Docker unavailable, skipping Docker containers")
-        return results
+    except Exception as exc:
+        logger.warning("Docker unavailable, skipping Docker containers", exc_info=True)
+        return ContainerListResponse(containers=results, docker_error=str(exc))
 
     metas = store.list_container_metas()
     meta_map = {m["dockerContainerId"]: m for m in metas}
@@ -128,7 +153,7 @@ async def list_containers():
 
         results.append(_build_container_response(dc, meta, sessions))
 
-    return results
+    return ContainerListResponse(containers=results, docker_error=docker_error)
 
 
 @router.post("", response_model=ContainerResponse, status_code=201)
@@ -172,7 +197,7 @@ async def create_container(req: CreateContainerRequest):
         if ssh_key_path:
             ssh_dir = os.path.dirname(os.path.expanduser(ssh_key_path))
             if ssh_dir and os.path.isdir(ssh_dir):
-                _add_volume(f"{ssh_dir}:/root/.ssh:ro")
+                _add_volume(f"{ssh_dir}:/tmp/.host-ssh:ro")
 
     if req.mount_claude:
         claude_dir = os.path.expanduser("~/.claude")
@@ -188,6 +213,7 @@ async def create_container(req: CreateContainerRequest):
     # Merge env
     env = dict(template.get("defaultEnv", {}))
     env.update(req.env)
+    env.setdefault("TMUXDECK_URL", "http://host.docker.internal:7080")
 
     container_name = f"{store.config.container_name_prefix}-{req.name}"
 
@@ -206,6 +232,12 @@ async def create_container(req: CreateContainerRequest):
         await dm.start_container(dc["id"])
     except Exception as e:
         raise HTTPException(500, f"Failed to start container: {e}") from None
+
+    # Inject setup scripts
+    try:
+        await _inject_scripts(dm, dc["id"])
+    except Exception:
+        logger.warning("Failed to inject scripts into %s", dc["id"], exc_info=True)
 
     # Refresh info after start
     try:
@@ -300,7 +332,7 @@ async def create_container_stream(req: CreateContainerRequest):
             if ssh_key_path:
                 ssh_dir = os.path.dirname(os.path.expanduser(ssh_key_path))
                 if ssh_dir and os.path.isdir(ssh_dir):
-                    _add_volume(f"{ssh_dir}:/root/.ssh:ro")
+                    _add_volume(f"{ssh_dir}:/tmp/.host-ssh:ro")
 
         if req.mount_claude:
             claude_dir = os.path.expanduser("~/.claude")
@@ -315,6 +347,7 @@ async def create_container_stream(req: CreateContainerRequest):
 
         env = dict(template.get("defaultEnv", {}))
         env.update(req.env)
+        env.setdefault("TMUXDECK_URL", "http://host.docker.internal:7080")
 
         container_name = f"{store.config.container_name_prefix}-{req.name}"
 
@@ -337,6 +370,12 @@ async def create_container_stream(req: CreateContainerRequest):
         except Exception as e:
             yield _line({"event": "error", "step": "starting_container", "message": f"Failed to start container: {e}"})
             return
+
+        # Inject setup scripts
+        try:
+            await _inject_scripts(dm, dc["id"])
+        except Exception:
+            logger.warning("Failed to inject scripts into %s", dc["id"], exc_info=True)
 
         # Refresh info after start
         try:

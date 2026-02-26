@@ -15,6 +15,7 @@ interface TerminalProps {
   windowIndex: number;
   autoFocus?: boolean;
   visible?: boolean;
+  onOpenFile?: (path: string) => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -71,6 +72,15 @@ function setupMockTerminal(term: XTerm, containerId: string, sessionName: string
           term.writeln('root');
         } else if (currentLine.trim() === 'date') {
           term.writeln(new Date().toString());
+        } else if (currentLine.trim().startsWith('tmuxdeck-open ')) {
+          const file = currentLine.trim().slice('tmuxdeck-open '.length).trim();
+          if (file) {
+            // Write the OSC 7337 sequence so the registered handler fires
+            const absPath = file.startsWith('/') ? file : `/workspace/${file}`;
+            term.write(`\x1b]7337;${absPath}\x07`);
+          } else {
+            term.writeln('Usage: tmuxdeck-open <file>');
+          }
         } else if (currentLine.trim().startsWith('echo ')) {
           term.writeln(currentLine.trim().slice(5));
         } else {
@@ -91,6 +101,11 @@ function setupMockTerminal(term: XTerm, containerId: string, sessionName: string
   });
 }
 
+interface BellWarning {
+  bellAction?: string;
+  visualBell?: string;
+}
+
 function setupWebSocketTerminal(
   term: XTerm,
   fitAddon: FitAddon,
@@ -98,6 +113,7 @@ function setupWebSocketTerminal(
   sessionName: string,
   windowIndex: number,
   onMouseWarning: (enabled: boolean) => void,
+  onBellWarning: (warning: BellWarning | null) => void,
 ): { cleanup: () => void; ws: WebSocket; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
@@ -130,6 +146,17 @@ function setupWebSocketTerminal(
       // Intercept backend control messages
       if (text.startsWith('MOUSE_WARNING:')) {
         onMouseWarning(text === 'MOUSE_WARNING:on');
+        return;
+      }
+      if (text.startsWith('BELL_WARNING:')) {
+        const payload = text.slice('BELL_WARNING:'.length);
+        if (payload === 'ok') {
+          onBellWarning(null);
+        } else {
+          try {
+            onBellWarning(JSON.parse(payload) as BellWarning);
+          } catch { /* ignore malformed */ }
+        }
         return;
       }
       term.write(text);
@@ -231,6 +258,19 @@ function setupWebSocketTerminal(
       return false;
     }
 
+    // In scroll mode, arrow up/down scroll one line instead of
+    // being sent to the shell (which would also exit scroll mode).
+    if (inScrollMode.current && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (ws.readyState === WebSocket.OPEN) {
+        if (e.key === 'ArrowUp') {
+          ws.send('SCROLL:up:1');
+        } else {
+          ws.send('SCROLL:down:1');
+        }
+      }
+      return false;
+    }
+
     return true;
   });
 
@@ -274,7 +314,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile }, ref) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -283,8 +323,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const lastSentDimsRef = useRef<{ cols: number; rows: number } | null>(null);
   const windowIndexRef = useRef(windowIndex);
   const inScrollModeRef = useRef<{ current: boolean }>({ current: false });
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
+  const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
 
   // Send current size to backend — skips if dimensions haven't changed
   // unless `force` is true (e.g. initial connection).
@@ -350,6 +393,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     term.loadAddon(webLinksAddon);
     term.open(container);
 
+    // Register custom OSC 7337 handler for tmuxdeck-open
+    const oscDisposable = term.parser.registerOscHandler(7337, (data) => {
+      const filePath = data.trim();
+      if (filePath) {
+        onOpenFileRef.current?.(filePath);
+      }
+      return true;
+    });
+
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -378,7 +430,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, ws, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning);
+      const { cleanup, ws, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning);
       wsRef.current = ws;
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
@@ -464,6 +516,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     return () => {
       cancelAnimationFrame(rafId);
+      oscDisposable.dispose();
       const cleanup = (wrapper as unknown as Record<string, (() => void) | undefined>).__wsCleanup;
       cleanup?.();
       wsRef.current = null;
@@ -523,6 +576,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, []);
 
+  const handleFixBell = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send('FIX_BELL:');
+    }
+  }, []);
+
   // Wrapper: absolute-positioned to get guaranteed dimensions from parent
   // Container: sized explicitly in pixels by doFit()
   return (
@@ -548,6 +608,36 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           </button>
           <button
             onClick={() => setMouseWarning(false)}
+            className="text-amber-300 hover:text-amber-100 transition-colors shrink-0 text-lg leading-none"
+            title="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+      {bellWarning && (
+        <div
+          className="absolute left-2 right-2 flex items-center gap-2 px-3 py-2 rounded z-20 text-sm"
+          style={{
+            top: mouseWarning ? '3rem' : '0.5rem',
+            background: 'rgba(180, 83, 9, 0.85)',
+            border: '1px solid rgba(245, 158, 11, 0.5)',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <span className="text-amber-100 flex-1">
+            Tmux bell notifications are disabled
+            {bellWarning.bellAction ? ' — bell-action is set to none' : ''}
+            {bellWarning.visualBell ? ' — visual-bell is enabled' : ''}.
+          </span>
+          <button
+            onClick={handleFixBell}
+            className="px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900 hover:bg-amber-100 transition-colors shrink-0"
+          >
+            Fix bell settings
+          </button>
+          <button
+            onClick={() => setBellWarning(null)}
             className="text-amber-300 hover:text-amber-100 transition-colors shrink-0 text-lg leading-none"
             title="Dismiss"
           >

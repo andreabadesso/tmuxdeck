@@ -11,15 +11,16 @@ import {
   Trash2,
   Pencil,
 } from 'lucide-react';
-import type { Container, SessionTarget } from '../types';
+import type { Container, SessionTarget, Selection } from '../types';
 import { api } from '../api/client';
 import { SessionItem } from './SessionItem';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getSessionOrder, saveSessionOrder } from '../utils/sessionOrder';
+import { getContainerExpanded, saveContainerExpanded } from '../utils/sidebarState';
 
 interface ContainerNodeProps {
   container: Container;
-  selectedSession?: SessionTarget | null;
+  selectedSession?: Selection | null;
   previewSession?: SessionTarget | null;
   onSelectSession?: (containerId: string, sessionName: string, windowIndex: number) => void;
   onPreviewSession?: (containerId: string, sessionName: string, windowIndex: number) => void;
@@ -27,6 +28,8 @@ interface ContainerNodeProps {
   onRefresh: () => void;
   digitByTargetKey?: Record<string, string>;
   assignDigit?: (digit: string, target: SessionTarget) => void;
+  isSessionExpanded?: (containerId: string, sessionId: string) => boolean;
+  setSessionExpanded?: (containerId: string, sessionId: string, expanded: boolean) => void;
   sectionCollapsed?: boolean;
   onToggleSection?: () => void;
 }
@@ -41,6 +44,8 @@ export function ContainerNode({
   onRefresh,
   digitByTargetKey,
   assignDigit,
+  isSessionExpanded: isSessionExpandedProp,
+  setSessionExpanded: setSessionExpandedProp,
   sectionCollapsed,
   onToggleSection,
 }: ContainerNodeProps) {
@@ -48,7 +53,11 @@ export function ContainerNode({
   const isLocal = container.isLocal === true;
   const isSpecial = isHost || isLocal;
   const isRunning = container.status === 'running';
-  const [expanded, setExpanded] = useState(isRunning || isSpecial);
+  const [expanded, setExpandedRaw] = useState(() => {
+    const saved = getContainerExpanded(container.id);
+    return saved !== null ? saved : (isRunning || isSpecial);
+  });
+  const setExpanded = (v: boolean) => { setExpandedRaw(v); saveContainerExpanded(container.id, v); };
   const [showMenu, setShowMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(container.displayName);
@@ -276,6 +285,8 @@ export function ContainerNode({
               digitByTargetKey={digitByTargetKey}
               assignDigit={assignDigit}
               onReorderSession={handleReorderSession}
+              isSessionExpanded={isSessionExpandedProp}
+              setSessionExpanded={setSessionExpandedProp}
             />
           ))}
 

@@ -11,7 +11,10 @@ const shortcuts = [
   { keys: ['Ctrl', '1\u20130'], action: 'Switch to numbered window' },
   { keys: ['Alt', '1\u20139'], action: 'Switch to window N in session' },
   { keys: ['Ctrl', 'Alt', '1\u20130'], action: 'Assign/unassign number' },
-  { keys: ['Ctrl', '\u2191\u2193'], action: 'Next / previous window' },
+  { keys: ['Ctrl', '\u2191\u2193'], action: 'Next / previous window or session' },
+  { keys: ['Ctrl', '\u2190'], action: 'Fold session' },
+  { keys: ['Ctrl', '\u2192'], action: 'Unfold session' },
+  { keys: ['Shift', 'Ctrl', '\u2191\u2193'], action: 'Move window up / down in session' },
   { keys: ['Esc', 'Esc'], action: 'Deselect current session' },
   { keys: ['\u2191', '\u2193'], action: 'Navigate in switcher' },
   { keys: ['Enter'], action: 'Select in switcher' },
@@ -37,7 +40,7 @@ export function KeyboardHelp({ onClose }: KeyboardHelpProps) {
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center pt-[15vh] z-50" onClick={onClose}>
       <div
         ref={panelRef}
-        className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm shadow-2xl overflow-hidden"
+        className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
@@ -52,7 +55,7 @@ export function KeyboardHelp({ onClose }: KeyboardHelpProps) {
         <div className="px-4 py-3 space-y-2">
           {shortcuts.map((s, i) => (
             <div key={i} className="flex items-center justify-between py-1">
-              <span className="text-sm text-gray-400">{s.action}</span>
+              <span className="text-sm text-gray-400 whitespace-nowrap">{s.action}</span>
               <div className="flex items-center gap-1">
                 {s.keys.map((key, j) => (
                   <span key={j}>

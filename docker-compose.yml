@@ -7,6 +7,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - backend-data:/data
       - ./docker/templates:/app/docker/templates:ro
+      - ./scripts:/app/scripts:ro
       - /tmp/tmux-${HOST_UID:-1000}:/tmp/tmux-host
     environment:
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default

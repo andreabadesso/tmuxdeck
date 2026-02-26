@@ -1,5 +1,6 @@
 import type {
   Container,
+  ContainerListResponse,
   Template,
   Settings,
   CreateContainerRequest,
@@ -11,7 +12,7 @@ import type {
 
 export interface ApiClient {
   // Containers
-  listContainers(): Promise<Container[]>;
+  listContainers(): Promise<ContainerListResponse>;
   createContainer(req: CreateContainerRequest): Promise<Container>;
   getContainer(id: string): Promise<Container>;
   renameContainer(id: string, displayName: string): Promise<Container>;

@@ -11,6 +11,12 @@ from . import auth
 # Paths that skip authentication
 _PUBLIC_PREFIXES = ("/api/v1/auth/", "/health")
 
+# Notification endpoints called from hook scripts (no auth)
+_PUBLIC_EXACT_POST = (
+    "/api/v1/notifications",
+    "/api/v1/notifications/dismiss",
+)
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -18,6 +24,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip public endpoints
         if any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+            return await call_next(request)
+
+        # Skip notification POST endpoints (hook calls from containers)
+        if request.method == "POST" and path in _PUBLIC_EXACT_POST:
             return await call_next(request)
 
         # Skip if no PIN is configured (first-time setup mode)

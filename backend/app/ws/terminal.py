@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fcntl
+import json
 import logging
 import os
 import pty
@@ -47,18 +48,35 @@ async def _set_tmux_extended_keys(tmux_prefix: list[str]) -> None:
         pass  # tmux may not support extended-keys on older versions
 
 
-async def _check_tmux_mouse(tmux_prefix: list[str]) -> bool:
-    """Return True if tmux global mouse option is 'on'."""
+async def _get_tmux_option(tmux_prefix: list[str], option: str) -> str:
+    """Read a global tmux option value. Returns empty string on error."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            *tmux_prefix, "show-options", "-gv", "mouse",
+            *tmux_prefix, "show-options", "-gv", option,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
         stdout, _ = await proc.communicate()
-        return stdout.decode().strip() == "on"
+        return stdout.decode().strip()
     except OSError:
-        return False
+        return ""
+
+
+async def _check_tmux_mouse(tmux_prefix: list[str]) -> bool:
+    """Return True if tmux global mouse option is 'on'."""
+    return await _get_tmux_option(tmux_prefix, "mouse") == "on"
+
+
+async def _check_tmux_bell(tmux_prefix: list[str]) -> dict[str, str] | None:
+    """Return dict of bell-related problems, or None if everything is fine."""
+    problems: dict[str, str] = {}
+    bell_action = await _get_tmux_option(tmux_prefix, "bell-action")
+    if bell_action == "none":
+        problems["bellAction"] = bell_action
+    visual_bell = await _get_tmux_option(tmux_prefix, "visual-bell")
+    if visual_bell == "on":
+        problems["visualBell"] = visual_bell
+    return problems or None
 
 
 async def _pty_terminal(
@@ -88,6 +106,12 @@ async def _pty_terminal(
     # Warn frontend if tmux mouse mode is on (breaks text selection)
     if tmux_prefix and await _check_tmux_mouse(tmux_prefix):
         await websocket.send_text("MOUSE_WARNING:on")
+
+    # Warn frontend if tmux bell settings prevent bell propagation
+    if tmux_prefix:
+        bell_problems = await _check_tmux_bell(tmux_prefix)
+        if bell_problems:
+            await websocket.send_text(f"BELL_WARNING:{json.dumps(bell_problems)}")
 
     loop = asyncio.get_event_loop()
 
@@ -196,6 +220,24 @@ async def _pty_terminal(
                         except (ValueError, OSError) as e:
                             logger.debug("%s disable-mouse failed: %s", label, e)
                         continue
+                    if text == "FIX_BELL:" and tmux_prefix:
+                        try:
+                            ba = await asyncio.create_subprocess_exec(
+                                *tmux_prefix, "set-option", "-g", "bell-action", "any",
+                                stdout=asyncio.subprocess.DEVNULL,
+                                stderr=asyncio.subprocess.DEVNULL,
+                            )
+                            await ba.wait()
+                            vb = await asyncio.create_subprocess_exec(
+                                *tmux_prefix, "set-option", "-g", "visual-bell", "off",
+                                stdout=asyncio.subprocess.DEVNULL,
+                                stderr=asyncio.subprocess.DEVNULL,
+                            )
+                            await vb.wait()
+                            await websocket.send_text("BELL_WARNING:ok")
+                        except (ValueError, OSError) as e:
+                            logger.debug("%s fix-bell failed: %s", label, e)
+                        continue
                     await loop.run_in_executor(
                         None, os.write, master_fd, text.encode("utf-8")
                     )
@@ -291,6 +333,24 @@ async def terminal_ws(
             )
             if mouse_out.strip() == "on":
                 await websocket.send_text("MOUSE_WARNING:on")
+        except Exception:
+            pass
+
+        # Warn frontend if tmux bell settings prevent bell propagation
+        try:
+            bell_problems: dict[str, str] = {}
+            bell_action_out = await dm.exec_command(
+                container_id, ["tmux", "show-options", "-gv", "bell-action"],
+            )
+            if bell_action_out.strip() == "none":
+                bell_problems["bellAction"] = bell_action_out.strip()
+            visual_bell_out = await dm.exec_command(
+                container_id, ["tmux", "show-options", "-gv", "visual-bell"],
+            )
+            if visual_bell_out.strip() == "on":
+                bell_problems["visualBell"] = visual_bell_out.strip()
+            if bell_problems:
+                await websocket.send_text(f"BELL_WARNING:{json.dumps(bell_problems)}")
         except Exception:
             pass
 
@@ -390,6 +450,21 @@ async def terminal_ws(
                                 await websocket.send_text("MOUSE_WARNING:off")
                             except (ValueError, Exception) as e:
                                 logger.debug("disable-mouse failed: %s", e)
+                            continue
+                        # Handle fix-bell control message
+                        if text == "FIX_BELL:":
+                            try:
+                                await dm.exec_command(
+                                    container_id,
+                                    ["tmux", "set-option", "-g", "bell-action", "any"],
+                                )
+                                await dm.exec_command(
+                                    container_id,
+                                    ["tmux", "set-option", "-g", "visual-bell", "off"],
+                                )
+                                await websocket.send_text("BELL_WARNING:ok")
+                            except (ValueError, Exception) as e:
+                                logger.debug("fix-bell failed: %s", e)
                             continue
                         # Regular text input
                         await loop.run_in_executor(None, raw_sock.sendall, text.encode("utf-8"))

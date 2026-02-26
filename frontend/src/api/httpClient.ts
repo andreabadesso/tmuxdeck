@@ -2,6 +2,7 @@ import type { ApiClient } from './client';
 import type {
   AuthStatus,
   Container,
+  ContainerListResponse,
   ContainerStreamEvent,
   Template,
   Settings,
@@ -148,7 +149,7 @@ export async function changePin(currentPin: string, newPin: string): Promise<voi
 
 export const httpApi: ApiClient = {
   // Containers
-  listContainers: () => request<Container[]>('/containers'),
+  listContainers: () => request<ContainerListResponse>('/containers'),
   createContainer: (req: CreateContainerRequest) =>
     request<Container>('/containers', { method: 'POST', body: JSON.stringify(req) }),
   getContainer: (id: string) => request<Container>(`/containers/${id}`),

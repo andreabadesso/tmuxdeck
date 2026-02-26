@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Save, Copy } from 'lucide-react';
 import { api } from '../api/client';
 import { TemplateEditor } from '../components/TemplateEditor';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 
 export function TemplatesPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -37,6 +40,17 @@ export function TemplatesPage() {
   if (!selectedId && templates.length > 0) {
     setSelectedId(templates[0].id);
   }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        navigate(-1);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -92,7 +106,11 @@ export function TemplatesPage() {
   });
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+      <div className="px-6 pt-6">
+        <SettingsTabs />
+      </div>
+      <div className="flex flex-1 min-h-0">
       {/* Template list */}
       <div className="w-56 border-r border-gray-800 flex flex-col shrink-0">
         <div className="flex items-center justify-between px-3 py-3 border-b border-gray-800">
@@ -194,6 +212,7 @@ export function TemplatesPage() {
             Select a template or create a new one
           </div>
         )}
+      </div>
       </div>
     </div>
   );

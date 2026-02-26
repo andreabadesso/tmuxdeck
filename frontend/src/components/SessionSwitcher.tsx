@@ -81,10 +81,12 @@ export function SessionSwitcher({ onClose, onSelect, onPreview, onPreviewEnd, re
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const { data: containers = [] } = useQuery({
+  const { data } = useQuery({
     queryKey: ['containers'],
     queryFn: () => api.listContainers(),
   });
+
+  const { containers = [] } = data ?? {};
 
   // Flatten sessions→windows from running containers
   const allWindows: WindowEntry[] = useMemo(() => {

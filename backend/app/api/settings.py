@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter
 
 from .. import store
@@ -14,6 +16,8 @@ def _to_response(data: dict) -> SettingsResponse:
         telegram_allowed_users=data.get("telegramAllowedUsers", []),
         default_volume_mounts=data.get("defaultVolumeMounts", []),
         ssh_key_path=data.get("sshKeyPath", "~/.ssh/id_rsa"),
+        telegram_registration_secret=data.get("telegramRegistrationSecret", ""),
+        telegram_notification_timeout_secs=data.get("telegramNotificationTimeoutSecs", 60),
     )
 
 
@@ -33,5 +37,17 @@ async def update_settings(req: UpdateSettingsRequest):
         updates["defaultVolumeMounts"] = req.default_volume_mounts
     if req.ssh_key_path is not None:
         updates["sshKeyPath"] = req.ssh_key_path
+    if req.telegram_registration_secret is not None:
+        updates["telegramRegistrationSecret"] = req.telegram_registration_secret
+    if req.telegram_notification_timeout_secs is not None:
+        updates["telegramNotificationTimeoutSecs"] = req.telegram_notification_timeout_secs
 
     return _to_response(store.update_settings(updates))
+
+
+@router.post("/generate-secret")
+async def generate_secret():
+    """Generate a new Telegram registration secret and save it."""
+    secret = secrets.token_urlsafe(16)
+    store.update_settings({"telegramRegistrationSecret": secret})
+    return {"secret": secret}

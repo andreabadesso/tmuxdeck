@@ -1,0 +1,25 @@
+#!/bin/bash
+# Opens a file in the TmuxDeck web UI.
+# Usage: tmuxdeck-open <file>
+#
+# Install: cp scripts/tmuxdeck-open /usr/local/bin/ && chmod +x /usr/local/bin/tmuxdeck-open
+
+if [ -z "$1" ]; then
+  echo "Usage: tmuxdeck-open <file>" >&2
+  exit 1
+fi
+
+path="$(realpath "$1" 2>/dev/null || echo "$1")"
+
+if [ ! -f "$path" ]; then
+  echo "tmuxdeck-open: $path: No such file" >&2
+  exit 1
+fi
+
+if [ -n "$TMUX" ]; then
+  # Inside tmux: wrap in DCS passthrough (requires allow-passthrough on)
+  printf '\ePtmux;\e\e]7337;%s\a\e\\' "$path"
+else
+  # Direct terminal
+  printf '\e]7337;%s\a' "$path"
+fi

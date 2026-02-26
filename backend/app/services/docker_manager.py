@@ -221,6 +221,24 @@ class DockerManager:
 
         await asyncio.to_thread(_put)
 
+    # --- file retrieval -------------------------------------------------
+
+    async def get_file(self, container_id: str, path: str) -> bytes:
+        """Read a file from inside a container using get_archive()."""
+
+        def _get() -> bytes:
+            c = self._client.containers.get(container_id)
+            bits, _stat = c.get_archive(path)
+            tar_bytes = b"".join(bits)
+            with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar:
+                member = tar.getmembers()[0]
+                f = tar.extractfile(member)
+                if f is None:
+                    raise FileNotFoundError(f"Cannot read {path}")
+                return f.read()
+
+        return await asyncio.to_thread(_get)
+
     # --- helpers --------------------------------------------------------
 
     @staticmethod

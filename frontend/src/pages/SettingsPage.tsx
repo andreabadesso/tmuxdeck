@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Plus, X, LogOut, KeyRound } from 'lucide-react';
+import { Save, Plus, X, LogOut, KeyRound, RefreshCw, Copy, Check } from 'lucide-react';
 import { api } from '../api/client';
 import { changePin, logout } from '../api/httpClient';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -16,7 +19,10 @@ export function SettingsPage() {
   const [defaultVolumes, setDefaultVolumes] = useState<string[]>([]);
   const [sshKeyPath, setSshKeyPath] = useState('');
   const [terminalPoolSize, setTerminalPoolSize] = useState(8);
+  const [telegramRegistrationSecret, setTelegramRegistrationSecret] = useState('');
+  const [telegramTimeoutSecs, setTelegramTimeoutSecs] = useState(60);
   const [isDirty, setIsDirty] = useState(false);
+  const [secretCopied, setSecretCopied] = useState(false);
 
   // Sync local state when settings data changes
   const [prevSettings, setPrevSettings] = useState(settings);
@@ -27,6 +33,8 @@ export function SettingsPage() {
     setDefaultVolumes(settings.defaultVolumeMounts);
     setSshKeyPath(settings.sshKeyPath);
     setTerminalPoolSize(settings.terminalPoolSize ?? 8);
+    setTelegramRegistrationSecret(settings.telegramRegistrationSecret ?? '');
+    setTelegramTimeoutSecs(settings.telegramNotificationTimeoutSecs ?? 60);
     setIsDirty(false);
   }
 
@@ -38,6 +46,8 @@ export function SettingsPage() {
         defaultVolumeMounts: defaultVolumes,
         sshKeyPath,
         terminalPoolSize,
+        telegramRegistrationSecret: telegramRegistrationSecret,
+        telegramNotificationTimeoutSecs: telegramTimeoutSecs,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -47,8 +57,21 @@ export function SettingsPage() {
 
   const markDirty = () => setIsDirty(true);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        navigate(-1);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate]);
+
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
+    <div className="px-6 py-8">
+      <SettingsTabs />
+      <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-semibold text-gray-100">Settings</h1>
         <button
@@ -121,6 +144,64 @@ export function SettingsPage() {
                 <Plus size={12} />
                 Add user
               </button>
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Registration Secret</label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={telegramRegistrationSecret}
+                  placeholder="Click Generate to create a secret"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none font-mono"
+                />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(telegramRegistrationSecret);
+                    setSecretCopied(true);
+                    setTimeout(() => setSecretCopied(false), 2000);
+                  }}
+                  disabled={!telegramRegistrationSecret}
+                  className="p-2 text-gray-500 hover:text-gray-200 disabled:opacity-30 transition-colors"
+                  title="Copy to clipboard"
+                >
+                  {secretCopied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/v1/settings/generate-secret', { method: 'POST' });
+                      const data = await res.json();
+                      setTelegramRegistrationSecret(data.secret);
+                    } catch { /* ignore */ }
+                  }}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                >
+                  <RefreshCw size={12} />
+                  Generate
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                Send <code className="text-gray-500">/start &lt;secret&gt;</code> to your bot on Telegram to register for notifications
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Notification Timeout (seconds)</label>
+              <input
+                type="number"
+                min={10}
+                max={600}
+                value={telegramTimeoutSecs}
+                onChange={(e) => {
+                  setTelegramTimeoutSecs(Math.max(10, Math.min(600, Number(e.target.value) || 60)));
+                  markDirty();
+                }}
+                className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                Time to wait before sending notification to Telegram (if no browser responds)
+              </p>
             </div>
           </div>
         </section>
@@ -218,6 +299,7 @@ export function SettingsPage() {
         {/* Security Section */}
         <SecuritySection />
       </div>
+      </div>
     </div>
   );
 }
@@ -277,6 +359,18 @@ function ChangePinScreen({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     inputRef.current?.focus();
   }, [step]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [onClose]);
 
   const currentValue =
     step === 'current' ? currentPin : step === 'new' ? newPin : confirmPin;

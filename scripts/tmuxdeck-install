@@ -1,0 +1,52 @@
+#!/bin/sh
+# tmuxdeck-install — Container initialization script.
+# Auto-injected and executed after container start by claude-box.
+# Safe to run multiple times (idempotent).
+
+set -e
+
+# --- SSH setup: copy from staging mount to /root/.ssh with correct ownership ---
+if [ -d /tmp/.host-ssh ]; then
+    mkdir -p /root/.ssh
+    # Copy files (overwrite) and fix ownership
+    cp -f /tmp/.host-ssh/* /root/.ssh/ 2>/dev/null || true
+    chown -R root:root /root/.ssh
+    chmod 700 /root/.ssh
+    # Fix permissions per file type
+    for f in /root/.ssh/*; do
+        [ -f "$f" ] || continue
+        case "$(basename "$f")" in
+            *.pub|known_hosts|authorized_keys|config)
+                chmod 644 "$f"
+                ;;
+            *)
+                chmod 600 "$f"
+                ;;
+        esac
+    done
+fi
+
+# --- Pre-populate SSH known hosts for common forges ---
+if command -v ssh-keyscan >/dev/null 2>&1; then
+    touch /root/.ssh/known_hosts 2>/dev/null || true
+    for host in github.com gitlab.com bitbucket.org; do
+        if ! grep -q "^$host " /root/.ssh/known_hosts 2>/dev/null; then
+            ssh-keyscan -t ed25519,rsa "$host" >> /root/.ssh/known_hosts 2>/dev/null || true
+        fi
+    done
+fi
+
+# --- Ensure tmuxdeck-open is installed and executable ---
+if [ -f /usr/local/bin/tmuxdeck-open ]; then
+    chmod +x /usr/local/bin/tmuxdeck-open
+else
+    echo "tmuxdeck-install: warning: tmuxdeck-open not found at /usr/local/bin/tmuxdeck-open" >&2
+fi
+
+# --- Git safe directory for /workspace ---
+if command -v git >/dev/null 2>&1; then
+    existing="$(git config --global --get-all safe.directory 2>/dev/null || true)"
+    if ! echo "$existing" | grep -qx '/workspace'; then
+        git config --global --add safe.directory /workspace
+    fi
+fi

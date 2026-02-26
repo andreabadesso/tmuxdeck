@@ -1,8 +1,53 @@
-import { useState, useRef, useEffect } from 'react';
-import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus } from 'lucide-react';
-import type { TmuxSession, SessionTarget } from '../types';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check } from 'lucide-react';
+import type { TmuxSession, TmuxWindow, SessionTarget, Selection } from '../types';
+import { isFoldedSelection } from '../types';
 import { api } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
+import { getSessionExpanded, saveSessionExpanded } from '../utils/sidebarState';
+
+type PaneState = 'idle' | 'busy' | 'waiting' | 'attention';
+
+const IDLE_COMMANDS = [
+  // Shells
+  'bash', 'zsh', 'sh', 'fish', 'dash', 'tcsh', 'csh', 'login', '-bash', '-zsh', '-sh', '-fish',
+  // Editors
+  'vim', 'nvim', 'vi', 'nano', 'emacs', 'micro', 'helix', 'hx', 'joe', 'ne', 'kakoune', 'kak',
+  // Pagers / viewers
+  'less', 'more', 'most', 'bat', 'man',
+  // Interactive tools
+  'htop', 'btop', 'top', 'atop', 'glances',
+  'tmux', 'screen',
+  'mc', 'tig', 'lazygit', 'lazydocker',
+  // REPLs / interactive interpreters
+  'python', 'python3', 'ipython', 'node', 'irb', 'ghci', 'lua',
+];
+
+function getPaneState(win: TmuxWindow): PaneState {
+  const commandIsIdle = !win.command || IDLE_COMMANDS.includes(win.command);
+
+  if (win.paneStatus === 'attention') return commandIsIdle ? 'idle' : 'attention';
+  if (win.paneStatus === 'waiting') return commandIsIdle ? 'idle' : 'waiting';
+  if (win.paneStatus === 'running') return commandIsIdle ? 'idle' : 'busy';
+  if (win.paneStatus === 'idle') return 'idle';
+  // No paneStatus set — fall back to command heuristic
+  return commandIsIdle ? 'idle' : 'busy';
+}
+
+const stateColors: Record<PaneState, string> = {
+  idle: 'bg-gray-600',
+  busy: 'bg-amber-400 animate-pulse',
+  waiting: 'bg-green-400',
+  attention: 'bg-blue-400 animate-pulse',
+};
+
+const stateLabels: Record<PaneState, string> = {
+  idle: 'Idle',
+  busy: 'Running',
+  waiting: 'Waiting for input',
+  attention: 'Needs attention',
+};
 
 interface WindowDragData {
   containerId: string;
@@ -23,10 +68,93 @@ const SESSION_DRAG_MIME = 'application/x-tmux-session';
 // Module-level state to track the current drag source (readable during dragOver)
 let currentDragSource: { containerId: string; sessionId: string; type: 'window' | 'session' } | null = null;
 
+const HOOKS_SNIPPET = `"hooks": {
+  "UserPromptSubmit": [
+    {
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "tmux set-option -p @pane_status running 2>/dev/null; exit 0" }]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [{ "type": "command", "command": "tmux set-option -p @pane_status idle 2>/dev/null; exit 0" }]
+    }
+  ],
+  "Notification": [
+    {
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "tmux set-option -p @pane_status attention 2>/dev/null; exit 0" }]
+    }
+  ]
+}`;
+
+function needsHooksHint(win: TmuxWindow): boolean {
+  return win.command === 'claude' && !win.paneStatus;
+}
+
+function HooksHintPopover({ anchorRef, onClose }: { anchorRef: React.RefObject<HTMLButtonElement | null>; onClose: () => void }) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: Math.max(8, rect.left - 140) });
+    }
+  }, [anchorRef]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        anchorRef.current && !anchorRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose, anchorRef]);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(HOOKS_SNIPPET);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!pos) return null;
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      style={{ top: pos.top, left: pos.left }}
+      className="fixed z-[9999] w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="text-xs text-gray-300 mb-2">
+        Install Claude Code hooks for automatic state tracking.
+        Add this to <code className="text-blue-400">~/.claude/settings.json</code>:
+      </p>
+      <pre className="text-[10px] leading-tight bg-gray-900 text-gray-300 p-2 rounded overflow-x-auto whitespace-pre">
+        {HOOKS_SNIPPET}
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="mt-2 flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+      >
+        {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+    </div>,
+    document.body
+  );
+}
+
 interface SessionItemProps {
   session: TmuxSession;
   containerId: string;
-  selectedSession?: SessionTarget | null;
+  selectedSession?: Selection | null;
   previewSession?: SessionTarget | null;
   onSelectWindow: (windowIndex: number) => void;
   onHoverWindow?: (windowIndex: number) => void;
@@ -35,6 +163,8 @@ interface SessionItemProps {
   digitByTargetKey?: Record<string, string>;
   assignDigit?: (digit: string, target: SessionTarget) => void;
   onReorderSession?: (fromSessionId: string, toSessionId: string) => void;
+  isSessionExpanded?: (containerId: string, sessionId: string) => boolean;
+  setSessionExpanded?: (containerId: string, sessionId: string, expanded: boolean) => void;
 }
 
 export function SessionItem({
@@ -49,8 +179,25 @@ export function SessionItem({
   digitByTargetKey,
   assignDigit,
   onReorderSession,
+  isSessionExpanded: isSessionExpandedProp,
+  setSessionExpanded: setSessionExpandedProp,
 }: SessionItemProps) {
-  const [expanded, setExpanded] = useState(true);
+  // Use centralized expanded state if provided, otherwise fall back to local state
+  const [localExpanded, setLocalExpanded] = useState(() => {
+    const saved = getSessionExpanded(containerId, session.id);
+    return saved !== null ? saved : true;
+  });
+  const expanded = isSessionExpandedProp
+    ? isSessionExpandedProp(containerId, session.id)
+    : localExpanded;
+  const setExpanded = (v: boolean) => {
+    if (setSessionExpandedProp) {
+      setSessionExpandedProp(containerId, session.id, v);
+    } else {
+      setLocalExpanded(v);
+      saveSessionExpanded(containerId, session.id, v);
+    }
+  };
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(session.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +209,10 @@ export function SessionItem({
   const [newWindowName, setNewWindowName] = useState('');
   const newWindowRef = useRef<HTMLInputElement>(null);
   const [confirmingKill, setConfirmingKill] = useState(false);
+  const [hooksHintWindow, setHooksHintWindow] = useState<number | null>(null);
+  const hooksHintAnchorRef = useRef<HTMLButtonElement | null>(null);
+
+  const closeHooksHint = useCallback(() => setHooksHintWindow(null), []);
 
   useEffect(() => {
     if (renaming && inputRef.current) inputRef.current.focus();
@@ -248,9 +399,17 @@ export function SessionItem({
     }
   };
 
+  const isFoldedSelected =
+    selectedSession != null &&
+    isFoldedSelection(selectedSession) &&
+    selectedSession.containerId === containerId &&
+    selectedSession.sessionId === session.id;
+
   const hasAnyWindowSelected =
-    selectedSession?.containerId === containerId &&
-    selectedSession?.sessionName === session.name;
+    selectedSession != null &&
+    !isFoldedSelection(selectedSession) &&
+    selectedSession.containerId === containerId &&
+    selectedSession.sessionName === session.name;
 
   const hasAnyWindowPreviewed =
     previewSession?.containerId === containerId &&
@@ -275,7 +434,11 @@ export function SessionItem({
         draggable={!renaming}
         onDragStart={handleSessionDragStart}
         onDragEnd={handleSessionDragEnd}
-        className={`flex items-center group px-2 py-0.5 cursor-pointer rounded-sm transition-colors text-gray-400 hover:bg-gray-800 hover:text-gray-200 ${
+        className={`flex items-center group px-2 py-0.5 cursor-pointer rounded-sm transition-colors ${
+          isFoldedSelected
+            ? 'bg-blue-900/40 text-blue-300'
+            : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+        } ${
           sessionHeaderDragOver ? 'bg-blue-900/30 ring-1 ring-blue-500/50' : ''
         }`}
         onClick={() => setExpanded(!expanded)}
@@ -360,10 +523,46 @@ export function SessionItem({
                 onMouseEnter={() => onHoverWindow?.(win.index)}
                 onMouseLeave={() => onHoverEnd?.()}
               >
-                <AppWindow size={11} className="shrink-0 mr-1.5" />
+                <AppWindow size={11} className="shrink-0 mr-1" />
+                {(() => {
+                  const state = getPaneState(win);
+                  return (
+                    <span
+                      className={`shrink-0 mr-1 inline-block w-1.5 h-1.5 rounded-full ${stateColors[state]}`}
+                      title={`${stateLabels[state]}${win.command ? ` (${win.command})` : ''}`}
+                    />
+                  );
+                })()}
                 <span className="text-xs truncate flex-1">
                   {position + 1}: {win.name}
                 </span>
+                <span className="shrink-0 w-[38px] text-[10px] text-right">
+                  {isPreviewed
+                    ? <span className="text-blue-400/60">preview</span>
+                    : isSelected
+                      ? <span className="text-blue-400">active</span>
+                      : null}
+                </span>
+                {needsHooksHint(win) && (
+                  <span className="shrink-0 mr-1">
+                    <button
+                      ref={hooksHintWindow === win.index ? hooksHintAnchorRef : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (hooksHintWindow === win.index) {
+                          setHooksHintWindow(null);
+                        } else {
+                          hooksHintAnchorRef.current = e.currentTarget;
+                          setHooksHintWindow(win.index);
+                        }
+                      }}
+                      className="text-yellow-500/70 hover:text-yellow-400 transition-colors"
+                      title="Hooks not installed"
+                    >
+                      <Info size={12} />
+                    </button>
+                  </span>
+                )}
                 {win.bell && (
                   <span className="shrink-0 mr-1 text-orange-400" title="Bell">
                     <Bell size={10} />
@@ -376,12 +575,6 @@ export function SessionItem({
                 )}
                 {win.active && (
                   <span className="text-[9px] text-green-500 shrink-0 mr-1">*</span>
-                )}
-                {isPreviewed && (
-                  <span className="text-[10px] text-blue-400/60 shrink-0">preview</span>
-                )}
-                {isSelected && !isPreviewed && (
-                  <span className="text-[10px] text-blue-400 shrink-0">active</span>
                 )}
                 {(() => {
                   const windowKey = `${containerId}:${session.name}:${win.index}`;
@@ -426,6 +619,9 @@ export function SessionItem({
             </button>
           )}
         </div>
+      )}
+      {hooksHintWindow !== null && (
+        <HooksHintPopover anchorRef={hooksHintAnchorRef} onClose={closeHooksHint} />
       )}
     </div>
   );

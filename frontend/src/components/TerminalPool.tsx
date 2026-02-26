@@ -11,10 +11,11 @@ export interface TerminalPoolHandle {
 interface TerminalPoolProps {
   entries: PoolEntry[];
   activeKey: string | null;
+  onOpenFile?: (containerId: string, path: string) => void;
 }
 
 export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
-  function TerminalPool({ entries, activeKey }, ref) {
+  function TerminalPool({ entries, activeKey, onOpenFile }, ref) {
     // Use useState with lazy init to hold the refs map — avoids useRef.current access during render
     const [refsMap] = useState(() => new Map<string, React.RefObject<TerminalHandle | null>>());
 
@@ -76,6 +77,7 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                 windowIndex={entry.windowIndex}
                 autoFocus={false}
                 visible={isActive}
+                onOpenFile={onOpenFile ? (path) => onOpenFile(entry.containerId, path) : undefined}
               />
             </div>
           );

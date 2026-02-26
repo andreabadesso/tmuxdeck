@@ -25,6 +25,8 @@ class TmuxWindowResponse(CamelModel):
     panes: int
     bell: bool
     activity: bool
+    command: str = ""
+    pane_status: str = ""
 
 
 class TmuxSessionResponse(CamelModel):
@@ -72,6 +74,11 @@ class ContainerResponse(CamelModel):
     template_id: str | None = None
     sessions: list[TmuxSessionResponse]
     created_at: str
+
+
+class ContainerListResponse(CamelModel):
+    containers: list[ContainerResponse]
+    docker_error: str | None = None
 
 
 class CreateContainerRequest(CamelModel):
@@ -128,6 +135,8 @@ class SettingsResponse(CamelModel):
     telegram_allowed_users: list[str]
     default_volume_mounts: list[str]
     ssh_key_path: str
+    telegram_registration_secret: str
+    telegram_notification_timeout_secs: int
 
 
 class UpdateSettingsRequest(CamelModel):
@@ -135,3 +144,38 @@ class UpdateSettingsRequest(CamelModel):
     telegram_allowed_users: list[str] | None = None
     default_volume_mounts: list[str] | None = None
     ssh_key_path: str | None = None
+    telegram_registration_secret: str | None = None
+    telegram_notification_timeout_secs: int | None = None
+
+
+# --- Notifications ---
+
+
+class NotificationRequest(CamelModel):
+    message: str = ""
+    title: str = ""
+    notification_type: str = ""
+    session_id: str = ""
+    container_id: str = ""
+    tmux_session: str = ""
+    tmux_window: int = 0
+
+
+class NotificationResponse(CamelModel):
+    id: str
+    message: str
+    title: str
+    notification_type: str
+    session_id: str
+    container_id: str
+    tmux_session: str
+    tmux_window: int
+    created_at: str
+    status: str
+
+
+class DismissRequest(CamelModel):
+    session_id: str = ""
+    container_id: str = ""
+    tmux_session: str = ""
+    tmux_window: int | None = None

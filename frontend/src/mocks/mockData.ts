@@ -9,7 +9,7 @@ export const mockContainers: Container[] = [
     image: 'local',
     isLocal: true,
     sessions: [
-      { id: 'sl1', name: 'main', windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false }], created: '2026-02-24T07:00:00Z', attached: false },
+      { id: 'sl1', name: 'main', windows: [{ index: 0, name: 'bash', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }], created: '2026-02-24T07:00:00Z', attached: false },
     ],
     createdAt: '2026-02-24T00:00:00Z',
   },
@@ -22,11 +22,11 @@ export const mockContainers: Container[] = [
     isHost: true,
     sessions: [
       { id: 'sh1', name: 'dev', windows: [
-        { index: 0, name: 'vim', active: true, panes: 1, bell: false, activity: false },
-        { index: 1, name: 'npm', active: false, panes: 1, bell: true, activity: false },
-        { index: 2, name: 'git', active: false, panes: 1, bell: false, activity: true },
+        { index: 0, name: 'vim', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' },
+        { index: 1, name: 'npm', active: false, panes: 1, bell: true, activity: false, command: 'node', paneStatus: '' },
+        { index: 2, name: 'git', active: false, panes: 1, bell: false, activity: true, command: 'bash', paneStatus: '' },
       ], created: '2026-02-24T08:00:00Z', attached: false, summary: 'vim src/main.ts | npm run dev | git log' },
-      { id: 'sh2', name: 'monitoring', windows: [{ index: 0, name: 'htop', active: true, panes: 1, bell: false, activity: false }], created: '2026-02-24T08:30:00Z', attached: false, summary: 'htop' },
+      { id: 'sh2', name: 'monitoring', windows: [{ index: 0, name: 'htop', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }], created: '2026-02-24T08:30:00Z', attached: false, summary: 'htop' },
     ],
     createdAt: '2026-02-24T00:00:00Z',
   },
@@ -38,10 +38,10 @@ export const mockContainers: Container[] = [
     image: 'claude-worker:latest',
     templateId: 't1',
     sessions: [
-      { id: 's1', name: 'claude', windows: [{ index: 0, name: 'claude', active: true, panes: 1, bell: true, activity: true }], created: '2026-02-24T10:00:00Z', attached: false, summary: 'claude --chat' },
+      { id: 's1', name: 'claude', windows: [{ index: 0, name: 'claude', active: true, panes: 1, bell: true, activity: true, command: 'node', paneStatus: 'running' }], created: '2026-02-24T10:00:00Z', attached: false, summary: 'claude --chat' },
       { id: 's2', name: 'shell', windows: [
-        { index: 0, name: 'npm', active: true, panes: 1, bell: false, activity: false },
-        { index: 1, name: 'vim', active: false, panes: 1, bell: false, activity: false },
+        { index: 0, name: 'npm', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' },
+        { index: 1, name: 'vim', active: false, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' },
       ], created: '2026-02-24T10:05:00Z', attached: false, summary: 'npm test | vim README.md' },
     ],
     createdAt: '2026-02-24T09:00:00Z',
@@ -54,7 +54,7 @@ export const mockContainers: Container[] = [
     image: 'claude-worker:latest',
     templateId: 't1',
     sessions: [
-      { id: 's3', name: 'claude', windows: [{ index: 0, name: 'claude', active: true, panes: 1, bell: false, activity: false }], created: '2026-02-24T11:00:00Z', attached: false, summary: 'claude --chat' },
+      { id: 's3', name: 'claude', windows: [{ index: 0, name: 'claude', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }], created: '2026-02-24T11:00:00Z', attached: false, summary: 'claude --chat' },
     ],
     createdAt: '2026-02-24T10:30:00Z',
   },
@@ -66,7 +66,7 @@ export const mockContainers: Container[] = [
     image: 'python-dev:latest',
     templateId: 't2',
     sessions: [
-      { id: 's4', name: 'main', windows: [{ index: 0, name: 'python', active: true, panes: 1, bell: false, activity: false }], created: '2026-02-20T08:00:00Z', attached: false, summary: 'python train.py' },
+      { id: 's4', name: 'main', windows: [{ index: 0, name: 'python', active: true, panes: 1, bell: false, activity: false, command: 'bash', paneStatus: '' }], created: '2026-02-20T08:00:00Z', attached: false, summary: 'python train.py' },
     ],
     createdAt: '2026-02-20T08:00:00Z',
   },

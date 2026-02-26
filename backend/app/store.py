@@ -180,6 +180,8 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "telegramAllowedUsers": [],
     "defaultVolumeMounts": [],
     "sshKeyPath": "~/.ssh/id_rsa",
+    "telegramRegistrationSecret": "",
+    "telegramNotificationTimeoutSecs": 60,
 }
 
 
@@ -199,3 +201,35 @@ def update_settings(data: dict[str, Any]) -> dict[str, Any]:
             current[key] = value
     _write_json(settings_path(), current)
     return current
+
+
+# --- Telegram Chats ----------------------------------------------------------
+
+
+def telegram_chats_path() -> Path:
+    return config.data_path / "telegram_chats.json"
+
+
+def get_telegram_chats() -> list[int]:
+    p = telegram_chats_path()
+    if not p.exists():
+        return []
+    data = json.loads(p.read_text())
+    return data.get("chat_ids", [])
+
+
+def add_telegram_chat(chat_id: int) -> list[int]:
+    chats = get_telegram_chats()
+    if chat_id not in chats:
+        chats.append(chat_id)
+        _ensure_dir(telegram_chats_path().parent)
+        telegram_chats_path().write_text(json.dumps({"chat_ids": chats}, indent=2))
+    return chats
+
+
+def remove_telegram_chat(chat_id: int) -> list[int]:
+    chats = get_telegram_chats()
+    chats = [c for c in chats if c != chat_id]
+    _ensure_dir(telegram_chats_path().parent)
+    telegram_chats_path().write_text(json.dumps({"chat_ids": chats}, indent=2))
+    return chats

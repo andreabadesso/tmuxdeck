@@ -15,28 +15,7 @@
 
 Run AI coding agents, dev servers, and long-lived processes inside Docker containers. TmuxDeck gives you a single browser tab to manage all of them — create containers from templates, organize tmux sessions and windows, and interact through a real terminal powered by xterm.js.
 
-```
-+--sidebar--------------------------+--terminal area---------------------+
-| TmuxDeck                [+] [<<] |                                    |
-|                                   |  $ claude --model opus             |
-| Host                     host     |  Analyzing codebase...             |
-|   > main                          |  Found 12 files matching query     |
-|     0: bash                       |                                    |
-|                                   |                                    |
-| > my-project (running)       [:]  |                                    |
-|   > claude        <- active       |                                    |
-|     0: claude-code *         [1]  |                                    |
-|     1: shell                 [2]  |                                    |
-|   > backend                       |                                    |
-|     0: server                     |                                    |
-|   [+ New Session]                 |                                    |
-|                                   |                                    |
-| > old-project (stopped)     [:]   |                                    |
-|                                   |                                    |
-| Templates                         |                                    |
-| Settings                          |                                    |
-+-----------------------------------+------------------------------------+
-```
+![TmuxDeck Dashboard](docs/screenshot.png)
 
 ## Why TmuxDeck?
 
