@@ -7,8 +7,10 @@ struct SwiftTerminalView: UIViewRepresentable {
     func makeUIView(context: Context) -> TerminalView {
         let terminalView = TerminalView()
         terminalView.terminalDelegate = context.coordinator
-        terminalView.nativeForegroundColor = .white
-        terminalView.nativeBackgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1.0)
+
+        let theme = viewModel.theme
+        terminalView.nativeForegroundColor = theme.foreground
+        terminalView.nativeBackgroundColor = theme.background
 
         let fontSize = viewModel.fontSize
         terminalView.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -30,6 +32,14 @@ struct SwiftTerminalView: UIViewRepresentable {
         let size = viewModel.fontSize
         if uiView.font.pointSize != size {
             uiView.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+
+        let theme = viewModel.theme
+        if uiView.nativeForegroundColor != theme.foreground {
+            uiView.nativeForegroundColor = theme.foreground
+        }
+        if uiView.nativeBackgroundColor != theme.background {
+            uiView.nativeBackgroundColor = theme.background
         }
     }
 

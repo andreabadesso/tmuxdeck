@@ -16,6 +16,7 @@ final class AppState {
 
     let apiClient = APIClient()
     let notificationService = NotificationService()
+    let preferences = UserPreferences()
 
     var servers: [ServerConfig] = ServerConfig.loadAll() {
         didSet {

@@ -1,6 +1,6 @@
 import Foundation
 
-struct NotificationResponse: Codable, Identifiable {
+struct NotificationResponse: Codable, Identifiable, Equatable {
     let id: String
     let message: String
     let title: String
