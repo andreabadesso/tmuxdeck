@@ -26,7 +26,7 @@ struct TerminalScreen: View {
                     )
                 }
 
-                ZStack(alignment: .topTrailing) {
+                ZStack {
                     SwiftTerminalView(viewModel: vm)
                         .onDisappear {
                             vm.disconnect()
@@ -44,21 +44,40 @@ struct TerminalScreen: View {
 
                     // Floating restore button when fullscreen
                     if isFullscreen {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isFullscreen = false
-                                hideTabBar = false
-                            }
-                        } label: {
-                            Image(systemName: "arrow.down.right.and.arrow.up.left")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white)
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        isFullscreen = false
+                                        hideTabBar = false
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(.ultraThinMaterial.opacity(0.6))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
                                 .padding(8)
-                                .background(.ultraThinMaterial.opacity(0.6))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            Spacer()
                         }
-                        .padding(8)
                         .transition(.opacity)
+                    }
+
+                    // Floating voice input button
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            VoiceInputButton { text in
+                                vm.sendInput(Data((text + "\n").utf8))
+                            }
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 100)
+                        }
                     }
                 }
 

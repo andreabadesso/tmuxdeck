@@ -33,6 +33,10 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>TmuxDeck uses Face ID to unlock the app securely.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TmuxDeck uses speech recognition to let you speak terminal commands.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TmuxDeck uses the microphone to capture voice input for terminal commands.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>

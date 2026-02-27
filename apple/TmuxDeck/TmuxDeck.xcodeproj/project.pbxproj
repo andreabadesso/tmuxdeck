@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -26,6 +26,11 @@
 		90E7F63F420AB4B182CE0417 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AE0A3AE7454DE2CF2D2A41 /* SidebarView.swift */; };
 		9A7674BE9BE5C6D92AC78195 /* TmuxSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26BB8E7ABEEEE4F61AC5051 /* TmuxSession.swift */; };
 		9E657EE5E73B52000CB2BDEC /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF7A3913B4177998404AFF1 /* ContentView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D2 /* UserPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */; };
+		A1B2C3D4E5F60718A9B0C1D4 /* TerminalThemeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D6 /* ChangePINView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D8 /* NotificationBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */; };
+		A1B2C3D4E5F60718A9B0C1DA /* CreateContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */; };
 		B56220BD82C5CF96090C3D19 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CED3CBE52D00730CA7462F /* AppState.swift */; };
 		B6A44FE2CF236E534DF8FE54 /* QuickSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157A8ADDD1991157AFFDB72D /* QuickSwitcherView.swift */; };
 		BE6C8A1899AE21A7D055B94D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E1FFC9E7BBBFD41A9F6AF8 /* SettingsView.swift */; };
@@ -34,14 +39,11 @@
 		DA44242466EC043F2DF42DB8 /* TerminalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE16EB0ACFF68EF6709EFFC0 /* TerminalViewModel.swift */; };
 		DDEDB77932CAAB9946C39BB3 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46E7522FE08F56239F110058 /* AuthModels.swift */; };
 		E3C52D9B52A649327C2CA3D3 /* TerminalConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBEB8C5D8C1DAF1931DFC608 /* TerminalConnection.swift */; };
+		A5C291FEFB51B8FADA9555D3 /* SpeechRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D724E357D33E472745896321 /* SpeechRecognitionService.swift */; };
+		2E273F6AECEEEA4F9374E47D /* VoiceInputButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFBB292A794852C6A179AEAA /* VoiceInputButton.swift */; };
 		ED5928B56FA6CEE7F848D5C9 /* Container.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AD7876BDC9CADB44E3E970 /* Container.swift */; };
 		F29C7F08180F420215552B15 /* ServerDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2441E989B56993C50B07B3 /* ServerDiscovery.swift */; };
 		FA2A11E1FA826AF2345F1C5F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 304971475A69816599336A8D /* APIClient.swift */; };
-		A1B2C3D4E5F60718A9B0C1D2 /* UserPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */; };
-		A1B2C3D4E5F60718A9B0C1D4 /* TerminalThemeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */; };
-		A1B2C3D4E5F60718A9B0C1D6 /* ChangePINView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */; };
-		A1B2C3D4E5F60718A9B0C1D8 /* NotificationBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */; };
-		A1B2C3D4E5F60718A9B0C1DA /* CreateContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,24 +65,26 @@
 		84B2F64173B314DF5311EDC7 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		941467C20EB764272F1D06BA /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		9613A14904CC2912F5FFA6AC /* ContainerListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerListView.swift; sourceTree = "<group>"; };
-		A26BB8E7ABEEEE4F61AC5051 /* TmuxSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxSession.swift; sourceTree = "<group>"; };
-		A3BA8E70C356D254EC0FCAA5 /* TmuxWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxWindow.swift; sourceTree = "<group>"; };
-		B625C7D9E33A0A618DAC7A7A /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
-		BB4956421714875789CFB033 /* WindowTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabBar.swift; sourceTree = "<group>"; };
-		BE16EB0ACFF68EF6709EFFC0 /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
-		C4055CA80FEA96AEF1374EE2 /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
-		D5606A5197D111358241F62E /* TmuxDeck.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TmuxDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D6F9863E3C5238A8AA14DECA /* SessionTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTreeView.swift; sourceTree = "<group>"; };
-		DBEB8C5D8C1DAF1931DFC608 /* TerminalConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalConnection.swift; sourceTree = "<group>"; };
-		EA2441E989B56993C50B07B3 /* ServerDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerDiscovery.swift; sourceTree = "<group>"; };
-		EB22F2DAB7BB373DDECE5598 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
-		F9E1FFC9E7BBBFD41A9F6AF8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		FBD7F873CFE75C8F5D932B79 /* SwiftTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTerminalView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPreferences.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemeView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePINView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBannerView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateContainerView.swift; sourceTree = "<group>"; };
+		A26BB8E7ABEEEE4F61AC5051 /* TmuxSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxSession.swift; sourceTree = "<group>"; };
+		A3BA8E70C356D254EC0FCAA5 /* TmuxWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxWindow.swift; sourceTree = "<group>"; };
+		B625C7D9E33A0A618DAC7A7A /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		BB4956421714875789CFB033 /* WindowTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabBar.swift; sourceTree = "<group>"; };
+		EFBB292A794852C6A179AEAA /* VoiceInputButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputButton.swift; sourceTree = "<group>"; };
+		BE16EB0ACFF68EF6709EFFC0 /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
+		C4055CA80FEA96AEF1374EE2 /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
+		D5606A5197D111358241F62E /* TmuxDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TmuxDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6F9863E3C5238A8AA14DECA /* SessionTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTreeView.swift; sourceTree = "<group>"; };
+		DBEB8C5D8C1DAF1931DFC608 /* TerminalConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalConnection.swift; sourceTree = "<group>"; };
+		D724E357D33E472745896321 /* SpeechRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionService.swift; sourceTree = "<group>"; };
+		EA2441E989B56993C50B07B3 /* ServerDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerDiscovery.swift; sourceTree = "<group>"; };
+		EB22F2DAB7BB373DDECE5598 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		F9E1FFC9E7BBBFD41A9F6AF8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		FBD7F873CFE75C8F5D932B79 /* SwiftTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTerminalView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +105,7 @@
 				FBD7F873CFE75C8F5D932B79 /* SwiftTerminalView.swift */,
 				C4055CA80FEA96AEF1374EE2 /* TerminalScreen.swift */,
 				BB4956421714875789CFB033 /* WindowTabBar.swift */,
+				EFBB292A794852C6A179AEAA /* VoiceInputButton.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -122,6 +127,7 @@
 				69C7D1704E378227EEEF9676 /* NotificationService.swift */,
 				EA2441E989B56993C50B07B3 /* ServerDiscovery.swift */,
 				DBEB8C5D8C1DAF1931DFC608 /* TerminalConnection.swift */,
+				D724E357D33E472745896321 /* SpeechRecognitionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -187,14 +193,6 @@
 			path = Containers;
 			sourceTree = "<group>";
 		};
-		A1B2C3D4E5F60718A9B0C1DC /* Notifications */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */,
-			);
-			path = Notifications;
-			sourceTree = "<group>";
-		};
 		872DC625E836696C2DA7B1DC /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -223,6 +221,14 @@
 				157A8ADDD1991157AFFDB72D /* QuickSwitcherView.swift */,
 			);
 			path = SessionSwitcher;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F60718A9B0C1DC /* Notifications */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */,
+			);
+			path = Notifications;
 			sourceTree = "<group>";
 		};
 		B45F1F831427ACE8D6E588A3 = {
@@ -279,11 +285,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
-				TargetAttributes = {
-					1DABA7AD2F7F92572D049BE3 = {
-						DevelopmentTeam = "";
-					};
-				};
 			};
 			buildConfigurationList = C6740679D786C8E8E3D16601 /* Build configuration list for PBXProject "TmuxDeck" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -298,7 +299,6 @@
 			packageReferences = (
 				675D693787911AA1DA7918F3 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -335,6 +335,8 @@
 				0E2824552EAAE73CABA5925E /* SwiftTerminalView.swift in Sources */,
 				4D382F1D3C0EBE02DEB04217 /* Template.swift in Sources */,
 				E3C52D9B52A649327C2CA3D3 /* TerminalConnection.swift in Sources */,
+				A5C291FEFB51B8FADA9555D3 /* SpeechRecognitionService.swift in Sources */,
+				2E273F6AECEEEA4F9374E47D /* VoiceInputButton.swift in Sources */,
 				4E67F0D90E625983EB83B316 /* TerminalScreen.swift in Sources */,
 				DA44242466EC043F2DF42DB8 /* TerminalViewModel.swift in Sources */,
 				88C4169D5F01234590FC33CB /* TmuxDeckApp.swift in Sources */,
@@ -477,7 +479,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 77W7897X9M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TmuxDeck/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -499,7 +501,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 77W7897X9M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TmuxDeck/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

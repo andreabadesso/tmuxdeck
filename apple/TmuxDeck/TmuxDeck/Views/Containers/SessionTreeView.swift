@@ -3,7 +3,7 @@ import SwiftUI
 struct SessionTreeView: View {
     let apiClient: APIClient
     let container: ContainerResponse
-    @Binding var selectedSession: TmuxSessionResponse?
+    @Binding var selectedDestination: SessionDestination?
 
     @State private var sessions: [TmuxSessionResponse] = []
     @State private var expandedSessions: Set<String> = []
@@ -30,12 +30,12 @@ struct SessionTreeView: View {
                     ) {
                         ForEach(session.windows) { window in
                             Button {
-                                selectedSession = session
+                                selectedDestination = SessionDestination(container: container, session: session)
                             } label: {
                                 WindowRow(window: window)
                             }
                             .listRowBackground(
-                                selectedSession?.id == session.id
+                                selectedDestination?.session.id == session.id
                                     ? Color.accentColor.opacity(0.15)
                                     : nil
                             )
