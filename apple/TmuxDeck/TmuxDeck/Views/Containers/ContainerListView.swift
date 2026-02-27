@@ -2,11 +2,10 @@ import SwiftUI
 
 struct ContainerListView: View {
     @Bindable var viewModel: ContainerListViewModel
-    @Binding var selectedContainer: ContainerResponse?
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        List(viewModel.filteredContainers, selection: $selectedContainer) { container in
+        List(viewModel.filteredContainers) { container in
             NavigationLink(value: container) {
                 ContainerCardView(container: container)
             }

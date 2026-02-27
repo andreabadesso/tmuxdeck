@@ -103,8 +103,7 @@ struct AdaptiveContainerView: View {
     @State private var isFullscreen = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     // iPhone states
-    @State private var selectedContainer: ContainerResponse?
-    @State private var selectedSession: TmuxSessionResponse?
+    @State private var selectedDestination: SessionDestination?
     @State private var containerListVM: ContainerListViewModel?
 
     var body: some View {
@@ -172,24 +171,22 @@ struct AdaptiveContainerView: View {
         Group {
             if let vm = containerListVM {
                 NavigationStack {
-                    ContainerListView(viewModel: vm, selectedContainer: $selectedContainer)
+                    ContainerListView(viewModel: vm)
                         .navigationDestination(for: ContainerResponse.self) { container in
                             SessionTreeView(
                                 apiClient: appState.apiClient,
                                 container: container,
-                                selectedSession: $selectedSession
+                                selectedDestination: $selectedDestination
                             )
                         }
-                        .navigationDestination(item: $selectedSession) { session in
-                            if let container = selectedContainer {
-                                TerminalScreen(
-                                    apiClient: appState.apiClient,
-                                    preferences: appState.preferences,
-                                    container: container,
-                                    session: session,
-                                    isFullscreen: $isFullscreen
-                                )
-                            }
+                        .navigationDestination(item: $selectedDestination) { dest in
+                            TerminalScreen(
+                                apiClient: appState.apiClient,
+                                preferences: appState.preferences,
+                                container: dest.container,
+                                session: dest.session,
+                                isFullscreen: $isFullscreen
+                            )
                         }
                 }
             } else {
