@@ -129,3 +129,21 @@ app.include_router(ws_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve frontend static files if STATIC_DIR is set and exists.
+# Must be mounted after all API/WS routes to avoid shadowing them.
+_static_dir = Path(config.static_dir) if config.static_dir else None
+if _static_dir and _static_dir.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    class SPAStaticFiles(StaticFiles):
+        """Serve index.html for any path not found (SPA client-side routing)."""
+
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except Exception:
+                return await super().get_response("index.html", scope)
+
+    app.mount("/", SPAStaticFiles(directory=str(_static_dir), html=True), name="spa")

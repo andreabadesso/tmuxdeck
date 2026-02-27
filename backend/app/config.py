@@ -9,6 +9,7 @@ class AppConfig(BaseSettings):
     container_name_prefix: str = "tmuxdeck"
     templates_dir: str = "/app/docker/templates"
     host_tmux_socket: str = ""  # e.g. "/tmp/tmux-host/default"
+    static_dir: str = ""  # Path to frontend static files (set by Nix package)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
