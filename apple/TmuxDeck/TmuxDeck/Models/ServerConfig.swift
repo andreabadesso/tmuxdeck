@@ -18,6 +18,9 @@ struct ServerConfig: Codable, Identifiable, Hashable {
         if !urlString.hasPrefix("http://") && !urlString.hasPrefix("https://") {
             urlString = "http://\(urlString)"
         }
+        // iOS Simulator resolves "localhost" to IPv6 ::1 first, which often fails.
+        // Force IPv4 127.0.0.1 for reliable local connections.
+        urlString = urlString.replacingOccurrences(of: "://localhost", with: "://127.0.0.1")
         return URL(string: urlString)
     }
 

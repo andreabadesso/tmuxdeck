@@ -7,22 +7,27 @@ final class TerminalViewModel {
     var isConnected = false
     var error: String?
     var fontSize: CGFloat = 14
+    var theme: TerminalTheme = .dark
 
     /// Set by SwiftTerminalView to feed incoming bytes into the TerminalView
     var feedHandler: (([UInt8]) -> Void)?
 
     let connection = TerminalConnection()
     private let apiClient: APIClient
+    private let preferences: UserPreferences
     private var hasConnected = false
 
     let containerId: String
     let sessionName: String
 
-    init(apiClient: APIClient, containerId: String, sessionName: String, windows: [TmuxWindowResponse]) {
+    init(apiClient: APIClient, preferences: UserPreferences, containerId: String, sessionName: String, windows: [TmuxWindowResponse]) {
         self.apiClient = apiClient
+        self.preferences = preferences
         self.containerId = containerId
         self.sessionName = sessionName
         self.windows = windows
+        self.fontSize = preferences.fontSize
+        self.theme = preferences.currentTheme
         if let active = windows.first(where: { $0.active }) {
             self.activeWindowIndex = active.index
         }
@@ -101,7 +106,18 @@ final class TerminalViewModel {
         let newSize = fontSize + delta
         if newSize >= 8 && newSize <= 32 {
             fontSize = newSize
+            preferences.fontSize = newSize
         }
+    }
+
+    func applyTheme(_ newTheme: TerminalTheme) {
+        theme = newTheme
+        preferences.themeName = newTheme.id
+    }
+
+    func reloadPreferences() {
+        fontSize = preferences.fontSize
+        theme = preferences.currentTheme
     }
 
     private func handleControlMessage(_ message: String) {

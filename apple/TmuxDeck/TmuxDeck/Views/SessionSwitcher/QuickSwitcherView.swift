@@ -2,6 +2,7 @@ import SwiftUI
 
 struct QuickSwitcherView: View {
     @Binding var isPresented: Bool
+    var onSelect: ((TerminalTarget) -> Void)?
     @Environment(AppState.self) private var appState
     @State private var searchText = ""
     @State private var results: [SwitcherItem] = []
@@ -13,6 +14,7 @@ struct QuickSwitcherView: View {
         let containerName: String
         let containerId: String
         let sessionName: String
+        let session: TmuxSessionResponse
         let windowName: String?
         let windowIndex: Int?
 
@@ -118,6 +120,7 @@ struct QuickSwitcherView: View {
                         containerName: container.displayName,
                         containerId: container.id,
                         sessionName: session.name,
+                        session: session,
                         windowName: nil,
                         windowIndex: nil
                     ))
@@ -127,6 +130,7 @@ struct QuickSwitcherView: View {
                             containerName: container.displayName,
                             containerId: container.id,
                             sessionName: session.name,
+                            session: session,
                             windowName: window.name,
                             windowIndex: window.index
                         ))
@@ -154,7 +158,13 @@ struct QuickSwitcherView: View {
     }
 
     private func selectItem(_ item: SwitcherItem) {
-        // Navigate to terminal — the parent view handles the actual navigation
+        let target = TerminalTarget(
+            containerId: item.containerId,
+            containerName: item.containerName,
+            session: item.session,
+            windowIndex: item.windowIndex ?? 0
+        )
+        onSelect?(target)
         isPresented = false
     }
 }

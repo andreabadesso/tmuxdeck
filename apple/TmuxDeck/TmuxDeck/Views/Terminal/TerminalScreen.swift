@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalScreen: View {
     let apiClient: APIClient
+    let preferences: UserPreferences
     let container: ContainerResponse
     let session: TmuxSessionResponse
     @Binding var isFullscreen: Bool
@@ -157,6 +158,7 @@ struct TerminalScreen: View {
             if viewModel == nil {
                 viewModel = TerminalViewModel(
                     apiClient: apiClient,
+                    preferences: preferences,
                     containerId: container.id,
                     sessionName: session.name,
                     windows: session.windows

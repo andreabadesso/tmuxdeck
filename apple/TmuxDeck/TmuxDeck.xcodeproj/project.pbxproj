@@ -23,6 +23,7 @@
 		6EFE257DCC726B114B6361CC /* WindowTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4956421714875789CFB033 /* WindowTabBar.swift */; };
 		86F766C8DB0D8E3602F63B3B /* ServerSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 516AD7EF300F0CBE05405B33 /* ServerSetupView.swift */; };
 		88C4169D5F01234590FC33CB /* TmuxDeckApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261C4D2F431E7CA11360C596 /* TmuxDeckApp.swift */; };
+		90E7F63F420AB4B182CE0417 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AE0A3AE7454DE2CF2D2A41 /* SidebarView.swift */; };
 		9A7674BE9BE5C6D92AC78195 /* TmuxSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26BB8E7ABEEEE4F61AC5051 /* TmuxSession.swift */; };
 		9E657EE5E73B52000CB2BDEC /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF7A3913B4177998404AFF1 /* ContentView.swift */; };
 		B56220BD82C5CF96090C3D19 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CED3CBE52D00730CA7462F /* AppState.swift */; };
@@ -36,6 +37,11 @@
 		ED5928B56FA6CEE7F848D5C9 /* Container.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AD7876BDC9CADB44E3E970 /* Container.swift */; };
 		F29C7F08180F420215552B15 /* ServerDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2441E989B56993C50B07B3 /* ServerDiscovery.swift */; };
 		FA2A11E1FA826AF2345F1C5F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 304971475A69816599336A8D /* APIClient.swift */; };
+		A1B2C3D4E5F60718A9B0C1D2 /* UserPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */; };
+		A1B2C3D4E5F60718A9B0C1D4 /* TerminalThemeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D6 /* ChangePINView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D8 /* NotificationBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */; };
+		A1B2C3D4E5F60718A9B0C1DA /* CreateContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +51,7 @@
 		34AD7876BDC9CADB44E3E970 /* Container.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Container.swift; sourceTree = "<group>"; };
 		35E8135056B70D922588C40F /* PINEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PINEntryView.swift; sourceTree = "<group>"; };
 		3ECB4A2D15677E60D026B600 /* Notification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notification.swift; sourceTree = "<group>"; };
+		41AE0A3AE7454DE2CF2D2A41 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		46E7522FE08F56239F110058 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		516AD7EF300F0CBE05405B33 /* ServerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSetupView.swift; sourceTree = "<group>"; };
 		5E070621690ECD1CE264C5FA /* ContainerListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerListViewModel.swift; sourceTree = "<group>"; };
@@ -69,6 +76,11 @@
 		EB22F2DAB7BB373DDECE5598 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		F9E1FFC9E7BBBFD41A9F6AF8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FBD7F873CFE75C8F5D932B79 /* SwiftTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTerminalView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPreferences.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemeView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePINView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBannerView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateContainerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +109,7 @@
 			isa = PBXGroup;
 			children = (
 				84B2F64173B314DF5311EDC7 /* Extensions.swift */,
+				A1B2C3D4E5F60718A9B0C1D3 /* UserPreferences.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -146,7 +159,9 @@
 		546C7B75F7153FE4AEB08622 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60718A9B0C1D7 /* ChangePINView.swift */,
 				F9E1FFC9E7BBBFD41A9F6AF8 /* SettingsView.swift */,
+				A1B2C3D4E5F60718A9B0C1D5 /* TerminalThemeView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -165,9 +180,19 @@
 			isa = PBXGroup;
 			children = (
 				9613A14904CC2912F5FFA6AC /* ContainerListView.swift */,
+				A1B2C3D4E5F60718A9B0C1DB /* CreateContainerView.swift */,
 				D6F9863E3C5238A8AA14DECA /* SessionTreeView.swift */,
+				41AE0A3AE7454DE2CF2D2A41 /* SidebarView.swift */,
 			);
 			path = Containers;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F60718A9B0C1DC /* Notifications */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60718A9B0C1D9 /* NotificationBannerView.swift */,
+			);
+			path = Notifications;
 			sourceTree = "<group>";
 		};
 		872DC625E836696C2DA7B1DC /* Views */ = {
@@ -175,6 +200,7 @@
 			children = (
 				C16D374C162F80696B6D979A /* Auth */,
 				7C020669BDC3CF9F6909EFF7 /* Containers */,
+				A1B2C3D4E5F60718A9B0C1DC /* Notifications */,
 				8A8461940ACCDC848593275C /* ServerSetup */,
 				909A64DEE2A41C146061090E /* SessionSwitcher */,
 				546C7B75F7153FE4AEB08622 /* Settings */,
@@ -305,6 +331,7 @@
 				86F766C8DB0D8E3602F63B3B /* ServerSetupView.swift in Sources */,
 				CB028C32CA0584B8F9A94205 /* SessionTreeView.swift in Sources */,
 				BE6C8A1899AE21A7D055B94D /* SettingsView.swift in Sources */,
+				90E7F63F420AB4B182CE0417 /* SidebarView.swift in Sources */,
 				0E2824552EAAE73CABA5925E /* SwiftTerminalView.swift in Sources */,
 				4D382F1D3C0EBE02DEB04217 /* Template.swift in Sources */,
 				E3C52D9B52A649327C2CA3D3 /* TerminalConnection.swift in Sources */,
@@ -314,6 +341,11 @@
 				9A7674BE9BE5C6D92AC78195 /* TmuxSession.swift in Sources */,
 				C4A78C4CDA41EE4F6147A74E /* TmuxWindow.swift in Sources */,
 				6EFE257DCC726B114B6361CC /* WindowTabBar.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D2 /* UserPreferences.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D4 /* TerminalThemeView.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D6 /* ChangePINView.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D8 /* NotificationBannerView.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1DA /* CreateContainerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
