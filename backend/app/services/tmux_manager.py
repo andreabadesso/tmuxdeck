@@ -389,6 +389,45 @@ class TmuxManager:
             )
         return panes
 
+    async def capture_pane_content(
+        self, container_id: str, session_name: str, window_index: int, pane_index: int, max_lines: int = 2000
+    ) -> str:
+        """Capture pane scrollback content with ANSI escapes."""
+        target = f"{session_name}:{window_index}.{pane_index}"
+        output = await self._run_cmd(
+            container_id,
+            [
+                "tmux",
+                "capture-pane",
+                "-p",
+                "-e",
+                "-S",
+                f"-{max_lines}",
+                "-t",
+                target,
+            ],
+        )
+        return output
+
+    async def capture_active_pane_history(
+        self, container_id: str, session_name: str, max_lines: int = 5000
+    ) -> str:
+        """Capture scrollback of the currently active pane in the session."""
+        output = await self._run_cmd(
+            container_id,
+            [
+                "tmux",
+                "capture-pane",
+                "-p",
+                "-e",
+                "-S",
+                f"-{max_lines}",
+                "-t",
+                session_name,
+            ],
+        )
+        return output
+
     async def ensure_session(self, container_id: str, session_name: str) -> None:
         """Create a session if it doesn't already exist."""
         sessions = await self.list_sessions(container_id)

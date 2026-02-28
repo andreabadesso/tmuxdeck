@@ -10,6 +10,7 @@ final class TerminalConnection {
     private var session: URLSession
     private var onData: (([UInt8]) -> Void)?
     private var onTextMessage: ((String) -> Void)?
+    private var onHistoryData: (([UInt8]) -> Void)?
     private let monitor = NWPathMonitor()
     private var wasConnected = false
     private var reconnectInfo: (url: URL, containerId: String, sessionName: String, windowIndex: Int)?
@@ -41,12 +42,14 @@ final class TerminalConnection {
         sessionName: String,
         windowIndex: Int,
         onData: @escaping ([UInt8]) -> Void,
-        onTextMessage: ((String) -> Void)? = nil
+        onTextMessage: ((String) -> Void)? = nil,
+        onHistoryData: (([UInt8]) -> Void)? = nil
     ) {
         disconnect()
 
         self.onData = onData
         self.onTextMessage = onTextMessage
+        self.onHistoryData = onHistoryData
 
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) else {
             error = "Invalid WebSocket URL"
@@ -148,6 +151,10 @@ final class TerminalConnection {
         sendText("CAPTURE_PANE:\(windowIndex).\(paneIndex)")
     }
 
+    func requestHistory() {
+        sendText("HISTORY_REQUEST:")
+    }
+
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
@@ -157,8 +164,16 @@ final class TerminalConnection {
                 switch message {
                 case .data(let data):
                     let bytes = [UInt8](data)
-                    Task { @MainActor in
-                        self.onData?(bytes)
+                    let historyPrefix = [UInt8]("HISTORY_DATA:".utf8)
+                    if bytes.count > historyPrefix.count && bytes.starts(with: historyPrefix) {
+                        let historyBytes = Array(bytes.dropFirst(historyPrefix.count))
+                        Task { @MainActor in
+                            self.onHistoryData?(historyBytes)
+                        }
+                    } else {
+                        Task { @MainActor in
+                            self.onData?(bytes)
+                        }
                     }
                 case .string(let text):
                     if text.hasPrefix("MOUSE_WARNING:") || text.hasPrefix("BELL_WARNING:")
@@ -196,7 +211,8 @@ final class TerminalConnection {
                 sessionName: info.sessionName,
                 windowIndex: info.windowIndex,
                 onData: onData,
-                onTextMessage: onTextMessage
+                onTextMessage: onTextMessage,
+                onHistoryData: onHistoryData
             )
         }
     }

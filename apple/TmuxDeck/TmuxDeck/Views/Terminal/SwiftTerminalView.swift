@@ -33,6 +33,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         terminalView.maximumZoomScale = 1.0
         terminalView.pinchGestureRecognizer?.isEnabled = false
 
+        // Two-finger swipe down to open scrollback history
+        let swipeDown = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleScrollbackSwipe))
+        swipeDown.direction = .down
+        swipeDown.numberOfTouchesRequired = 2
+        terminalView.addGestureRecognizer(swipeDown)
+
         viewModel.connectIfNeeded()
 
         return terminalView
@@ -97,9 +103,18 @@ struct SwiftTerminalView: UIViewRepresentable {
             }
         }
 
+        // MARK: - Scrollback gesture
+
+        @objc func handleScrollbackSwipe() {
+            viewModel.requestScrollbackHistory()
+        }
+
         // MARK: - TerminalViewDelegate
 
         func send(source: TerminalView, data: ArraySlice<UInt8>) {
+            if viewModel.showingScrollback {
+                viewModel.dismissScrollback()
+            }
             viewModel.sendInput(Data(data))
         }
 
