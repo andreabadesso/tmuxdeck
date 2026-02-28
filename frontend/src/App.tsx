@@ -8,6 +8,7 @@ import { MainPage } from './pages/MainPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TelegramSettingsPage } from './pages/TelegramSettingsPage';
+import { BridgeSettingsPage } from './pages/BridgeSettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { useAuth } from './hooks/useAuth';
 import { setOnAuthLost } from './api/httpClient';
@@ -60,6 +61,7 @@ function App() {
                 <Route path="/" element={<MainPage />} />
                 <Route path="/settings/templates" element={<TemplatesPage />} />
                 <Route path="/settings/telegram" element={<TelegramSettingsPage />} />
+                <Route path="/settings/bridges" element={<BridgeSettingsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/help" element={<HelpPage />} />
               </Route>

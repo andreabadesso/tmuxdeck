@@ -9,6 +9,7 @@ import type {
   CreateWindowRequest,
   TmuxSession,
   TmuxWindow,
+  BridgeConfig,
 } from '../types';
 
 export interface ApiClient {
@@ -46,6 +47,11 @@ export interface ApiClient {
   // Telegram chats
   getTelegramChats(): Promise<{ chats: TelegramChat[] }>;
   removeTelegramChat(chatId: number): Promise<{ chats: TelegramChat[] }>;
+
+  // Bridges
+  listBridges(): Promise<BridgeConfig[]>;
+  createBridge(name: string): Promise<BridgeConfig>;
+  deleteBridge(id: string): Promise<void>;
 }
 
 import { mockApi } from '../mocks/mockApi';

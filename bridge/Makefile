@@ -1,4 +1,4 @@
-.PHONY: install lint format test check
+.PHONY: install lint format test check up down restart
 
 install:
 	uv pip install -e ".[dev]"
@@ -14,3 +14,12 @@ test:
 	uv run pytest tests/ -v
 
 check: lint test
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+restart:
+	docker compose restart

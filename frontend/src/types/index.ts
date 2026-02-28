@@ -140,3 +140,11 @@ export interface CreateSessionRequest {
 export interface CreateWindowRequest {
   name?: string;
 }
+
+export interface BridgeConfig {
+  id: string;
+  name: string;
+  token: string | null;
+  connected: boolean;
+  createdAt: string;
+}

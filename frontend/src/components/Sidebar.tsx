@@ -139,24 +139,27 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               </p>
             </div>
           )}
-          {special.map((container) => (
-            <ContainerNode
-              key={container.id}
-              container={container}
-              selectedSession={selectedSession}
-              previewSession={previewSession}
-              onSelectSession={handleSelectSession}
-              onPreviewSession={isMainPage ? onPreviewSession : undefined}
-              onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
-              onRefresh={refetch}
-              digitByTargetKey={digitByTargetKey}
-              assignDigit={assignDigit}
-              isSessionExpanded={isSessionExpanded}
-              setSessionExpanded={setSessionExpanded}
-              sectionCollapsed={sectionsCollapsed.special}
-              onToggleSection={() => setSectionsCollapsed((s) => ({ ...s, special: !s.special }))}
-            />
-          ))}
+          {special.map((container) => {
+            const sectionKey = container.containerType ?? 'special';
+            return (
+              <ContainerNode
+                key={container.id}
+                container={container}
+                selectedSession={selectedSession}
+                previewSession={previewSession}
+                onSelectSession={handleSelectSession}
+                onPreviewSession={isMainPage ? onPreviewSession : undefined}
+                onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
+                onRefresh={refetch}
+                digitByTargetKey={digitByTargetKey}
+                assignDigit={assignDigit}
+                isSessionExpanded={isSessionExpanded}
+                setSessionExpanded={setSessionExpanded}
+                sectionCollapsed={sectionsCollapsed[sectionKey]}
+                onToggleSection={() => setSectionsCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
+              />
+            );
+          })}
           {special.length > 0 && (running.length > 0 || stopped.length > 0) && (
             <div className="border-t border-gray-800 my-2" />
           )}

@@ -1,0 +1,12 @@
+services:
+  bridge:
+    container_name: tmuxdeck-bridge
+    build: .
+    network_mode: host
+    volumes:
+      - ${TMUX_SOCKET_DIR:-/tmp/tmux-1000}:/tmp/tmux-host
+    environment:
+      - HOST_TMUX_SOCKET=/tmp/tmux-host/default
+    env_file:
+      - .env
+    restart: unless-stopped

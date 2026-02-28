@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 import struct
 from datetime import UTC, datetime
 
@@ -38,6 +39,7 @@ class Bridge:
                     max_size=2**20,
                     ping_interval=30,
                     ping_timeout=10,
+                    family=socket.AF_INET6 if self.config.ipv6 else socket.AF_INET,
                 ) as ws:
                     self._ws = ws
                     delay = self.config.reconnect_min  # reset on success

@@ -1,6 +1,7 @@
 import type { ApiClient } from './client';
 import type {
   AuthStatus,
+  BridgeConfig,
   Container,
   ContainerListResponse,
   ContainerStreamEvent,
@@ -226,6 +227,13 @@ export const httpApi: ApiClient = {
   getTelegramChats: () => request<{ chats: TelegramChat[] }>('/settings/telegram-chats'),
   removeTelegramChat: (chatId: number) =>
     request<{ chats: TelegramChat[] }>(`/settings/telegram-chats/${chatId}`, { method: 'DELETE' }),
+
+  // Bridges
+  listBridges: () => request<BridgeConfig[]>('/bridges'),
+  createBridge: (name: string) =>
+    request<BridgeConfig>('/bridges', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteBridge: (id: string) =>
+    request<void>(`/bridges/${id}`, { method: 'DELETE' }),
 };
 
 export async function createContainerStream(
