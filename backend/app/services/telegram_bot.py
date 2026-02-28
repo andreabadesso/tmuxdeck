@@ -30,6 +30,38 @@ logger = logging.getLogger(__name__)
 
 TALK_IDLE_TIMEOUT = 300  # 5 minutes
 
+# Module-level reference to the active bot instance (set by TelegramBot.start)
+_active_bot: TelegramBot | None = None
+
+
+async def send_security_alert(title: str, message: str) -> None:
+    """Send a security alert to all registered Telegram chats.
+
+    This is a simple fire-and-forget function — no dedup, no session context.
+    Called from auth endpoints via asyncio.create_task.
+    """
+    bot = _active_bot
+    if bot is None or bot._app is None:
+        return
+
+    chat_ids = store.get_telegram_chats()
+    if not chat_ids:
+        return
+
+    escaped_title = _escape_md2(title)
+    escaped_msg = _escape_md2(message)
+    text = f"\U0001f6a8 *{escaped_title}*\n\n{escaped_msg}"
+
+    for chat_id in chat_ids:
+        try:
+            await bot._app.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        except Exception:
+            logger.exception("Failed to send security alert to chat %d", chat_id)
+
 # Status emoji mapping
 _STATUS_EMOJI = {
     "attention": "\U0001f534",  # 🔴
@@ -74,6 +106,7 @@ class TelegramBot:
         return chat_id in store.get_telegram_chats()
 
     async def start(self) -> None:
+        global _active_bot
         self._app = Application.builder().token(self._token).build()
 
         self._app.add_handler(CommandHandler("start", self._handle_start))
@@ -82,6 +115,7 @@ class TelegramBot:
         self._app.add_handler(CommandHandler("capture", self._handle_capture))
         self._app.add_handler(CommandHandler("talk", self._handle_talk))
         self._app.add_handler(CommandHandler("cancel", self._handle_cancel))
+        self._app.add_handler(CommandHandler("unlock", self._handle_unlock))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
@@ -101,14 +135,17 @@ class TelegramBot:
                 BotCommand("capture", "Capture pane as text"),
                 BotCommand("talk", "Send messages to a session"),
                 BotCommand("cancel", "Exit talk mode"),
+                BotCommand("unlock", "Unlock login after lockout"),
             ])
             logger.info("Registered bot commands menu")
         except Exception:
             logger.exception("Failed to register bot commands menu")
 
+        _active_bot = self
         logger.info("Telegram bot started")
 
     async def stop(self) -> None:
+        global _active_bot
         if self._app:
             # Cancel all talk mode timers
             for state in self._talk_mode.values():
@@ -120,6 +157,7 @@ class TelegramBot:
             await self._app.updater.stop()
             await self._app.stop()
             await self._app.shutdown()
+            _active_bot = None
             logger.info("Telegram bot stopped")
 
     async def send_notification(self, record: NotificationRecord) -> None:
@@ -736,6 +774,29 @@ class TelegramBot:
                 )
             except Exception:
                 logger.exception("Failed to send idle timeout message")
+
+    # ── /unlock ───────────────────────────────────────────────
+
+    async def _handle_unlock(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        if not update.message or not update.effective_chat:
+            return
+        chat_id = update.effective_chat.id
+        if not self._is_registered(chat_id):
+            await update.message.reply_text(
+                "\u26a0\ufe0f This chat is not registered. Use /start <secret> first."
+            )
+            return
+
+        from ..rate_limit import get_limiter
+
+        limiter = get_limiter()
+        limiter.unlock_all()
+        await update.message.reply_text("\u2705 Login unlocked. All rate limits cleared.")
+        logger.info("Login unlocked via Telegram by chat %d", chat_id)
+
+        await send_security_alert("Login unlocked", "Login unlocked via Telegram /unlock command")
 
     # ── /cancel ───────────────────────────────────────────────
 

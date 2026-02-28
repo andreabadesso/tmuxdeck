@@ -106,6 +106,13 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
   return res.json();
 }
 
+export interface LoginError extends Error {
+  remainingAttempts?: number;
+  retryAfter?: number;
+  locked?: boolean;
+  statusCode?: number;
+}
+
 export async function loginWithPin(pin: string): Promise<void> {
   const res = await fetch(`${BASE}/auth/login`, {
     method: 'POST',
@@ -114,7 +121,12 @@ export async function loginWithPin(pin: string): Promise<void> {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ detail: 'Login failed' }));
-    throw new Error(data.detail || 'Login failed');
+    const err = new Error(data.detail || 'Login failed') as LoginError;
+    err.remainingAttempts = data.remainingAttempts;
+    err.retryAfter = data.retryAfter;
+    err.locked = data.locked;
+    err.statusCode = res.status;
+    throw err;
   }
   cachedPin = pin;
 }

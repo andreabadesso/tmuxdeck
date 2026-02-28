@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Plus, X, LogOut, KeyRound } from 'lucide-react';
+import { Save, Plus, X, LogOut, KeyRound, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { changePin, logout } from '../api/httpClient';
 import { SettingsTabs } from '../components/SettingsTabs';
@@ -164,6 +164,22 @@ export function SettingsPage() {
 
         {/* Security Section */}
         <SecuritySection />
+
+        {/* App Section — visible in standalone PWA mode */}
+        {window.matchMedia('(display-mode: standalone)').matches && (
+          <section>
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
+              App
+            </h2>
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+            >
+              <RefreshCw size={14} />
+              Reload App
+            </button>
+          </section>
+        )}
       </div>
       </div>
     </div>

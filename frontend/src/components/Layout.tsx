@@ -6,7 +6,7 @@ export function Layout() {
   const isMainPage = location.pathname === '/';
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100">
+    <div className="flex bg-gray-950 text-gray-100" style={{ height: 'var(--app-height, 100dvh)' }}>
       {isMainPage ? (
         <Outlet />
       ) : (

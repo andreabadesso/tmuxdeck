@@ -17,6 +17,7 @@ export function useAuth() {
   return {
     isAuthenticated: data?.authenticated ?? false,
     isPinSet: data?.pinSet ?? false,
+    isLocked: data?.locked ?? false,
     isLoading,
     invalidateAuth,
   };

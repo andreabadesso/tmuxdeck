@@ -11,6 +11,15 @@ class AppConfig(BaseSettings):
     host_tmux_socket: str = ""  # e.g. "/tmp/tmux-host/default"
     static_dir: str = ""  # Path to frontend static files (set by Nix package)
 
+    # IP allowlist (Tailscale + localhost) — disabled by default, enable when ready
+    ip_allowlist_enabled: bool = False
+    ip_allowlist: str = "127.0.0.0/8,::1,100.64.0.0/10"
+
+    # Login rate limiting
+    login_max_attempts: int = 5
+    login_backoff_base_seconds: int = 2
+    login_lockout_threshold_seconds: int = 60
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     @property

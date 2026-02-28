@@ -2,7 +2,11 @@ import { useEffect, useRef, useImperativeHandle, useCallback, forwardRef, useSta
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+
+const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
+  ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
 export interface TerminalHandle {
   focus: () => void;
@@ -158,6 +162,9 @@ function setupWebSocketTerminal(
           } catch { /* ignore malformed */ }
         }
         return;
+      }
+      if (text.startsWith('WINDOW_STATE:')) {
+        return; // Control message consumed by native clients only
       }
       term.write(text);
     }
@@ -328,6 +335,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
+  const [showVirtualKeys, setShowVirtualKeys] = useState(IS_TOUCH_DEVICE);
+  const [showTextInput, setShowTextInput] = useState(false);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
+  const prevInputRef = useRef('');
 
   // Send current size to backend — skips if dimensions haven't changed
   // unless `force` is true (e.g. initial connection).
@@ -511,14 +523,89 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     };
 
+    // --- Touch scroll handlers ---
+    let touchStartY = 0;
+    let touchLastY = 0;
+    let lastTouchTime = 0;
+    let touchVelocity = 0;
+    const TOUCH_THROTTLE_MS = 50;
+    const PX_PER_LINE = 20;
+    let momentumRafId = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      // Don't preventDefault — allow taps for keyboard focus
+      touchStartY = e.touches[0].clientY;
+      touchLastY = touchStartY;
+      touchVelocity = 0;
+      cancelAnimationFrame(momentumRafId);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const currentY = e.touches[0].clientY;
+      const deltaFromStart = Math.abs(currentY - touchStartY);
+
+      // Only treat as scroll if finger moved >10px
+      if (deltaFromStart < 10) return;
+
+      // Prevent iOS rubber-banding
+      e.preventDefault();
+
+      const now = Date.now();
+      if (now - lastTouchTime < TOUCH_THROTTLE_MS) return;
+
+      const deltaY = touchLastY - currentY;
+      const elapsed = now - lastTouchTime || 1;
+      touchVelocity = deltaY / elapsed; // px per ms
+      lastTouchTime = now;
+      touchLastY = currentY;
+
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      const lines = Math.max(1, Math.round(Math.abs(deltaY) / PX_PER_LINE));
+      if (deltaY > 0) {
+        inScrollModeRef.current.current = true;
+        ws.send(`SCROLL:up:${lines}`);
+      } else if (deltaY < 0) {
+        ws.send(`SCROLL:down:${lines}`);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      // Momentum scrolling based on final velocity
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (Math.abs(touchVelocity) < 0.3) return;
+
+      let velocity = touchVelocity;
+      const decay = () => {
+        velocity *= 0.85;
+        if (Math.abs(velocity) < 0.1) return;
+
+        const lines = Math.max(1, Math.round(Math.abs(velocity * TOUCH_THROTTLE_MS) / PX_PER_LINE));
+        if (velocity > 0) {
+          inScrollModeRef.current.current = true;
+          ws.send(`SCROLL:up:${lines}`);
+        } else {
+          ws.send(`SCROLL:down:${lines}`);
+        }
+        momentumRafId = requestAnimationFrame(decay);
+      };
+      momentumRafId = requestAnimationFrame(decay);
+    };
+
     wrapper.addEventListener('paste', handlePaste, { capture: true });
     wrapper.addEventListener('dragover', handleDragOver);
     wrapper.addEventListener('dragleave', handleDragLeave);
     wrapper.addEventListener('drop', handleDrop);
     wrapper.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+    wrapper.addEventListener('touchstart', handleTouchStart, { passive: true });
+    wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
+    wrapper.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      cancelAnimationFrame(momentumRafId);
       oscDisposable.dispose();
       const cleanup = (wrapper as unknown as Record<string, (() => void) | undefined>).__wsCleanup;
       cleanup?.();
@@ -531,6 +618,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       wrapper.removeEventListener('dragleave', handleDragLeave);
       wrapper.removeEventListener('drop', handleDrop);
       wrapper.removeEventListener('wheel', handleWheel, { capture: true });
+      wrapper.removeEventListener('touchstart', handleTouchStart);
+      wrapper.removeEventListener('touchmove', handleTouchMove);
+      wrapper.removeEventListener('touchend', handleTouchEnd);
       term.dispose();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- windowIndex changes are
@@ -553,6 +643,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     }
   }, [windowIndex, sendResize]);
+
+  // Refit when text input toolbar is toggled (changes wrapper padding)
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      doFit();
+      sendResize();
+    });
+  }, [showTextInput, showVirtualKeys, doFit, sendResize]);
 
   // Refit when becoming visible, blur when hidden
   useEffect(() => {
@@ -586,10 +684,34 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, []);
 
+  const sendToWs = useCallback((data: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    }
+  }, []);
+
+  const sendVirtualKey = useCallback((data: string, isScroll?: 'up' | 'down') => {
+    if (isScroll && inScrollModeRef.current.current) {
+      sendToWs(`SCROLL:${isScroll}:1`);
+    } else {
+      sendToWs(data);
+    }
+    // Restore focus to whatever had it (text input or terminal)
+    const active = document.activeElement;
+    requestAnimationFrame(() => {
+      if (active instanceof HTMLElement) {
+        active.focus();
+      } else {
+        xtermRef.current?.focus();
+      }
+    });
+  }, [sendToWs]);
+
   // Wrapper: absolute-positioned to get guaranteed dimensions from parent
   // Container: sized explicitly in pixels by doFit()
   return (
-    <div ref={wrapperRef} className="absolute inset-1 overflow-hidden">
+    <div ref={wrapperRef} className={`absolute inset-1 overflow-hidden ${showVirtualKeys ? (showTextInput ? 'pb-20' : 'pb-10') : ''}`}>
       <div ref={termRef} />
       {mouseWarning && (
         <div
@@ -659,6 +781,153 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         >
           <span className="text-blue-400 text-lg font-medium">Drop image here</span>
         </div>
+      )}
+      {/* Virtual key toolbar for touch devices */}
+      {IS_TOUCH_DEVICE && (
+        showVirtualKeys ? (
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-gray-900/90 backdrop-blur-sm border-t border-gray-700/50">
+            {showTextInput && (
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-gray-700/50">
+                <input
+                  ref={textInputRef}
+                  type="text"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="on"
+                  spellCheck={false}
+                  placeholder="Type here (slide/autocomplete)..."
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 font-mono outline-none focus:border-blue-500"
+                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionEnd={(e) => {
+                    composingRef.current = false;
+                    // Send the composed text (autocomplete/slide result)
+                    const composed = (e.target as HTMLInputElement).value.slice(prevInputRef.current.length);
+                    if (composed) sendToWs(composed);
+                    prevInputRef.current = (e.target as HTMLInputElement).value;
+                  }}
+                  onInput={(e) => {
+                    if (composingRef.current) return; // wait for compositionEnd
+                    const el = e.target as HTMLInputElement;
+                    const newVal = el.value;
+                    const oldVal = prevInputRef.current;
+                    if (newVal.length > oldVal.length) {
+                      // Characters added — send the new ones
+                      sendToWs(newVal.slice(oldVal.length));
+                    } else if (newVal.length < oldVal.length) {
+                      // Characters deleted — send backspaces
+                      const deleted = oldVal.length - newVal.length;
+                      for (let i = 0; i < deleted; i++) sendToWs('\x7f');
+                    }
+                    prevInputRef.current = newVal;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      sendToWs('\r');
+                      if (textInputRef.current) textInputRef.current.value = '';
+                      prevInputRef.current = '';
+                    }
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-1 px-2 py-1.5">
+            {[
+              { label: 'Esc', data: '\x1b' },
+              { label: 'Tab', data: '\t' },
+              { label: 'S-Tab', data: '\x1b[Z' },
+              { label: '^C', data: '\x03', className: 'text-red-400' },
+              { label: '^D', data: '\x04' },
+              { label: '^Z', data: '\x1a' },
+              { label: '/', data: '/' },
+              { label: '/clear', data: '/clear\r' },
+            ].map(({ label, data, className }) => (
+              <button
+                key={label}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => sendVirtualKey(data)}
+                className={`px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors ${className || 'text-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+            <div className="w-px h-5 bg-gray-700 mx-0.5" />
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => sendVirtualKey('\x1b[D')}
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => sendVirtualKey('\x1b[B', 'down')}
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+            >
+              <ChevronDown size={14} />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => sendVirtualKey('\x1b[A', 'up')}
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => sendVirtualKey('\x1b[C')}
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => sendVirtualKey('|')}
+              className="px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+            >
+              |
+            </button>
+            <div className="flex-1" />
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => {
+                setShowTextInput(v => !v);
+                if (!showTextInput) setTimeout(() => textInputRef.current?.focus(), 50);
+              }}
+              className={`px-1.5 py-1 rounded transition-colors ${showTextInput ? 'text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
+              title="Text input"
+            >
+              <Type size={14} />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onClick={() => { setShowVirtualKeys(false); setShowTextInput(false); doFit(); }}
+              className="px-1.5 py-1 rounded text-gray-500 hover:text-gray-300 transition-colors"
+              title="Hide virtual keys"
+            >
+              <Keyboard size={14} />
+            </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onTouchStart={(e) => e.preventDefault()}
+            onClick={() => { setShowVirtualKeys(true); doFit(); }}
+            className="absolute bottom-1 right-1 z-20 p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-300 transition-colors"
+            title="Show virtual keys"
+          >
+            <Keyboard size={14} />
+          </button>
+        )
       )}
     </div>
   );

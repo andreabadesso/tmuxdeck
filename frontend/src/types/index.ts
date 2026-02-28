@@ -141,6 +141,7 @@ export type ContainerStreamEvent =
 export interface AuthStatus {
   authenticated: boolean;
   pinSet: boolean;
+  locked?: boolean;
 }
 
 export interface CreateSessionRequest {

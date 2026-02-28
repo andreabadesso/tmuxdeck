@@ -4,15 +4,22 @@
   --sidebar-width: 300px;
 }
 
-body {
+html, body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #0a0a0a;
+}
+
+body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
-  height: 100vh;
+  height: var(--app-height, 100dvh);
   width: 100vw;
   overflow: hidden;
 }

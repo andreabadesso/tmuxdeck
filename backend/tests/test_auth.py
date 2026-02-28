@@ -9,16 +9,19 @@ from fastapi.testclient import TestClient
 
 from app import auth, store
 from app.main import app
+from app.rate_limit import get_limiter
 from app.services.docker_manager import DockerManager
 from app.services.tmux_manager import TmuxManager
 
 
 @pytest.fixture(autouse=True)
 def clear_sessions():
-    """Clear in-memory sessions between tests."""
+    """Clear in-memory sessions and rate limiter between tests."""
     auth._sessions.clear()
+    get_limiter().unlock_all()
     yield
     auth._sessions.clear()
+    get_limiter().unlock_all()
 
 
 @pytest.fixture
@@ -237,3 +240,97 @@ class TestAuthCore:
         # Manually expire it
         auth._sessions[token] = time.time() - 1
         assert auth.validate_session(token) is False
+
+
+# ── Rate limiting integration ─────────────────────────────────
+
+
+class TestRateLimiting:
+    def test_wrong_pin_returns_remaining_attempts(self, client):
+        _setup_pin(client, "1234")
+        client.cookies.clear()
+        resp = client.post("/api/v1/auth/login", json={"pin": "0000"})
+        assert resp.status_code == 401
+        data = resp.json()
+        assert "remainingAttempts" in data
+
+    def test_rate_limit_after_max_failures(self, client):
+        """After max failures, subsequent attempts get 429."""
+        _setup_pin(client, "1234")
+        client.cookies.clear()
+        limiter = get_limiter()
+        max_attempts = limiter._max_attempts
+
+        # Exhaust all free attempts
+        for _ in range(max_attempts):
+            resp = client.post("/api/v1/auth/login", json={"pin": "0000"})
+            assert resp.status_code == 401
+
+        # One more to trigger backoff
+        resp = client.post("/api/v1/auth/login", json={"pin": "0000"})
+        # Should be 401 (wrong PIN recorded) but next check will throttle
+        # Now the next attempt should be throttled
+        resp = client.post("/api/v1/auth/login", json={"pin": "0000"})
+        assert resp.status_code == 429
+        data = resp.json()
+        assert "retryAfter" in data
+
+    def test_hard_lockout_after_escalation(self, client):
+        """After enough escalated failures, returns 423."""
+        _setup_pin(client, "1234")
+        client.cookies.clear()
+        limiter = get_limiter()
+
+        # Force hard lockout via direct API
+        ip = "testclient"
+        for _ in range(20):
+            result = limiter.record_failure(ip)
+            if result["locked"]:
+                break
+
+        resp = client.post("/api/v1/auth/login", json={"pin": "0000"})
+        assert resp.status_code == 423
+        data = resp.json()
+        assert data.get("locked") is True
+
+    def test_success_resets_rate_limit(self, client):
+        """Correct PIN resets the failure counter."""
+        _setup_pin(client, "1234")
+        client.cookies.clear()
+        # Accumulate some failures
+        for _ in range(3):
+            client.post("/api/v1/auth/login", json={"pin": "0000"})
+        # Correct login
+        resp = client.post("/api/v1/auth/login", json={"pin": "1234"})
+        assert resp.status_code == 200
+        # Limiter should be clean for this IP
+        limiter = get_limiter()
+        check = limiter.check("testclient")
+        assert check.allowed is True
+
+    def test_unlock_endpoint_requires_auth(self, client):
+        _setup_pin(client, "1234")
+        client.cookies.clear()
+        resp = client.post("/api/v1/auth/unlock")
+        assert resp.status_code == 401
+
+    def test_unlock_endpoint_clears_lockout(self, client):
+        _setup_pin(client, "1234")
+        # setup auto-logs in, so we're authenticated
+        limiter = get_limiter()
+        # Force a lockout on some IP
+        for _ in range(20):
+            result = limiter.record_failure("attacker-ip")
+            if result["locked"]:
+                break
+        assert limiter.is_any_locked() is True
+
+        resp = client.post("/api/v1/auth/unlock")
+        assert resp.status_code == 200
+        assert limiter.is_any_locked() is False
+
+    def test_status_includes_locked_field(self, client):
+        resp = client.get("/api/v1/auth/status")
+        data = resp.json()
+        assert "locked" in data
+        assert data["locked"] is False
