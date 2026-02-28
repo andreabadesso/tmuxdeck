@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import glob
 import hashlib
 import json
@@ -158,7 +159,7 @@ class Bridge:
                 logger.info("Connecting to %s ...", self.config.url)
                 async with websockets.connect(
                     self.config.url,
-                    max_size=2**20,
+                    max_size=32 * 1024 * 1024,
                     ping_interval=30,
                     ping_timeout=10,
                     family=socket.AF_INET6 if self.config.ipv6 else socket.AF_INET,
@@ -295,6 +296,8 @@ class Bridge:
                 "sessions": sessions,
                 "sources": self._configured_sources(),
             }))
+        elif msg_type == "file_read":
+            await self._handle_file_read(msg)
         elif msg_type == "ping":
             await self._ws.send(json.dumps({"type": "pong"}))
         else:
@@ -400,6 +403,110 @@ class Bridge:
                 "output": "",
                 "error": str(e),
             }))
+
+    async def _handle_file_read(self, msg: dict) -> None:
+        """Read a file and return base64-encoded content."""
+        req_id = msg.get("id", "")
+        file_path = msg.get("path", "")
+        source = self._resolve_source(msg)
+
+        if not file_path:
+            await self._ws.send(json.dumps({
+                "type": "file_result", "id": req_id, "error": "No path specified",
+            }))
+            return
+
+        try:
+            if source.startswith("docker:"):
+                data, mime = await self._read_file_docker(source, file_path)
+            else:
+                data, mime = await self._read_file_local(source, file_path)
+
+            encoded = base64.b64encode(data).decode("ascii")
+            await self._ws.send(json.dumps({
+                "type": "file_result",
+                "id": req_id,
+                "data": encoded,
+                "mime_type": mime,
+                "size": len(data),
+            }))
+        except Exception as e:
+            logger.error("file_read failed (source=%s, path=%s): %s", source, file_path, e)
+            await self._ws.send(json.dumps({
+                "type": "file_result", "id": req_id, "error": str(e),
+            }))
+
+    async def _read_file_local(self, source: str, file_path: str) -> tuple[bytes, str]:
+        """Read a file from local or host filesystem."""
+        # For host source, the file is still on the local filesystem
+        # (host source only affects tmux socket routing, not filesystem)
+        if not os.path.isabs(file_path):
+            raise ValueError(f"Path must be absolute: {file_path}")
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        size = os.path.getsize(file_path)
+        if size > 20 * 1024 * 1024:
+            raise ValueError(f"File too large ({size} bytes)")
+
+        with open(file_path, "rb") as f:
+            data = f.read()
+
+        # Detect MIME type
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "file", "--mime-type", "-b", file_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            mime = stdout.decode("utf-8").strip()
+            if not mime or "/" not in mime:
+                mime = "application/octet-stream"
+        except Exception:
+            mime = "application/octet-stream"
+
+        return data, mime
+
+    async def _read_file_docker(self, source: str, file_path: str) -> tuple[bytes, str]:
+        """Read a file from inside a Docker container."""
+        container_id = source.split(":", 1)[1]
+
+        # Build docker exec base command
+        docker_base = ["docker"]
+        if self.config.docker_socket:
+            docker_base += ["-H", f"unix://{self.config.docker_socket}"]
+
+        # Read file contents
+        proc = await asyncio.create_subprocess_exec(
+            *docker_base, "exec", container_id, "cat", file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace").strip()
+            raise FileNotFoundError(error or f"Failed to read {file_path}")
+
+        data = stdout
+        if len(data) > 20 * 1024 * 1024:
+            raise ValueError(f"File too large ({len(data)} bytes)")
+
+        # Detect MIME type
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *docker_base, "exec", container_id, "file", "--mime-type", "-b", file_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            mime = stdout.decode("utf-8").strip()
+            if not mime or "/" not in mime:
+                mime = "application/octet-stream"
+        except Exception:
+            mime = "application/octet-stream"
+
+        return data, mime
 
     # --- Source-aware command routing ---
 

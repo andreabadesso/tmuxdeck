@@ -142,6 +142,11 @@ async def bridge_ws(websocket: WebSocket):
                     if req_id:
                         conn.resolve_pending(req_id, msg)
 
+                elif msg_type == "file_result":
+                    req_id = msg.get("id")
+                    if req_id:
+                        conn.resolve_pending(req_id, msg)
+
                 elif msg_type == "pong":
                     pass  # keepalive response, nothing to do
 
