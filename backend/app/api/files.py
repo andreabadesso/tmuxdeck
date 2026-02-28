@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -16,6 +17,7 @@ from ..services.bridge_manager import (
     bridge_source_from_container,
     is_bridge,
 )
+from ..services.debug_log import DebugLog
 from ..services.docker_manager import DockerManager
 from ..services.tmux_manager import _is_special
 
@@ -107,26 +109,36 @@ def _pretty_print_text(data: bytes, path: str) -> bytes:
 
 async def _get_file_bridge(container_id: str, path: str) -> tuple[bytes, str]:
     """Fetch a file through the bridge WebSocket from the remote system."""
+    dl = DebugLog.get()
     bm = BridgeManager.get()
     conn = bm.get_bridge_for_container(container_id)
     if not conn:
+        dl.error("files", f"Bridge not connected for container {container_id}")
         raise HTTPException(status_code=502, detail="Bridge not connected")
 
     source = bridge_source_from_container(container_id)
-    result = await conn.send_and_wait({
-        "type": "file_read",
-        "path": path,
-        "source": source,
-    }, timeout=30)
+    dl.info("files", f"Bridge file request: {path}", detail=f"container={container_id} source={source}")
+
+    try:
+        result = await conn.request({
+            "type": "file_read",
+            "path": path,
+            "source": source,
+        }, timeout=30)
+    except asyncio.TimeoutError:
+        dl.error("files", f"Bridge file request timed out: {path}")
+        raise HTTPException(status_code=504, detail="Bridge file request timed out")
 
     if "error" in result:
         error_msg = result["error"]
+        dl.error("files", f"Bridge file error: {error_msg}", detail=f"path={path}")
         if "not found" in error_msg.lower() or "No such file" in error_msg:
             raise HTTPException(status_code=404, detail=error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
     data = base64.b64decode(result["data"])
     mime = result.get("mime_type", "application/octet-stream")
+    dl.info("files", f"Bridge file received: {path}", detail=f"size={len(data)} mime={mime}")
     return data, mime
 
 

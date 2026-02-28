@@ -107,4 +107,10 @@ class TerminalSession:
                 self._proc.terminate()
             except ProcessLookupError:
                 pass
-            await self._proc.wait()
+            try:
+                await asyncio.wait_for(self._proc.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                try:
+                    self._proc.kill()
+                except ProcessLookupError:
+                    pass

@@ -410,7 +410,10 @@ class Bridge:
         file_path = msg.get("path", "")
         source = self._resolve_source(msg)
 
+        logger.info("file_read request: path=%s source=%s", file_path, source)
+
         if not file_path:
+            logger.warning("file_read rejected: no path specified")
             await self._ws.send(json.dumps({
                 "type": "file_result", "id": req_id, "error": "No path specified",
             }))
@@ -423,6 +426,7 @@ class Bridge:
                 data, mime = await self._read_file_local(source, file_path)
 
             encoded = base64.b64encode(data).decode("ascii")
+            logger.info("file_read success: path=%s size=%d mime=%s", file_path, len(data), mime)
             await self._ws.send(json.dumps({
                 "type": "file_result",
                 "id": req_id,

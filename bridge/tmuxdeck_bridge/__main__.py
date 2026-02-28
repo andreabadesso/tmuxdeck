@@ -20,19 +20,34 @@ def main() -> None:
     config = parse_config()
     bridge = Bridge(config)
 
-    loop = asyncio.new_event_loop()
+    async def _run():
+        loop = asyncio.get_running_loop()
+        main_task = asyncio.current_task()
+        shutdown_requested = False
 
-    def _shutdown(sig: int, frame) -> None:
-        logging.info("Received signal %s, shutting down...", sig)
-        bridge.stop()
+        def _on_signal():
+            nonlocal shutdown_requested
+            if shutdown_requested:
+                logging.warning("Forced shutdown")
+                import os
+                os._exit(1)
+            shutdown_requested = True
+            logging.info("Shutting down...")
+            bridge.stop()
+            main_task.cancel()
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _on_signal)
+
+        try:
+            await bridge.run()
+        except asyncio.CancelledError:
+            pass
 
     try:
-        loop.run_until_complete(bridge.run())
-    finally:
-        loop.close()
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
