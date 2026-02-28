@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 
 from ..config import config
-from .bridge_manager import BridgeManager, is_bridge
+from .bridge_manager import BridgeManager, bridge_source_from_container, is_bridge
 from .debug_log import DebugLog
 from .docker_manager import DockerManager
 
@@ -86,7 +86,10 @@ class TmuxManager:
                 dl.warn("bridge", f"No bridge connection for {container_id}", f"cmd={cmd}")
                 return ""
             try:
-                result = await conn.request({"type": "tmux_cmd", "cmd": cmd})
+                source = bridge_source_from_container(container_id)
+                result = await conn.request({
+                    "type": "tmux_cmd", "cmd": cmd, "source": source,
+                })
                 if result.get("error"):
                     dl.error("bridge", f"tmux_cmd error: {result['error']}", f"container={container_id} cmd={cmd}")
                     logger.debug("Bridge tmux_cmd error: %s", result["error"])
@@ -140,7 +143,17 @@ class TmuxManager:
         """List all tmux sessions in a container (or on the host).
 
         Returns a list of dicts with: id, name, windows, created, attached.
+        For bridge containers, returns the cached sessions reported by the bridge
+        (which already include correct source-based IDs).
         """
+        if _is_bridge(container_id):
+            bm = BridgeManager.get()
+            conn = bm.get_bridge_for_container(container_id)
+            if conn:
+                source = bridge_source_from_container(container_id)
+                return [s for s in conn.sessions if s.get("source") == source]
+            return []
+
         output = await self._run_cmd(
             container_id,
             [

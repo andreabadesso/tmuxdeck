@@ -115,6 +115,7 @@ async def bridge_ws(websocket: WebSocket):
 
                 if msg_type == "sessions":
                     conn.sessions = msg.get("sessions", [])
+                    conn.sources = msg.get("sources", [])
 
                 elif msg_type == "attach_ok":
                     req_id = msg.get("id")

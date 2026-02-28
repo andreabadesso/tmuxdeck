@@ -142,7 +142,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             </div>
           )}
           {special.map((container) => {
-            const sectionKey = container.containerType ?? 'special';
+            const sectionKey = container.containerType === 'bridge' ? container.id : (container.containerType ?? 'special');
             return (
               <ContainerNode
                 key={container.id}

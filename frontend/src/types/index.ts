@@ -51,6 +51,7 @@ export interface TmuxSession {
   created: string;
   attached: boolean;
   summary?: string;
+  source?: string;
 }
 
 export interface Container {

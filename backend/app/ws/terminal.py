@@ -15,7 +15,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .. import auth
 from ..config import config
-from ..services.bridge_manager import BridgeManager, bridge_id_from_container, is_bridge
+from ..services.bridge_manager import BridgeManager, bridge_id_from_container, bridge_source_from_container, is_bridge
 from ..services.docker_manager import DockerManager
 from ..services.tmux_manager import _is_host, _is_local
 
@@ -329,6 +329,7 @@ async def _bridge_terminal(
         return
 
     channel_id = conn.allocate_channel()
+    source = bridge_source_from_container(container_id)
 
     try:
         # Request the bridge to attach to the tmux session
@@ -339,6 +340,7 @@ async def _bridge_terminal(
             "channel_id": channel_id,
             "cols": 80,
             "rows": 24,
+            "source": source,
         })
 
         if result.get("type") == "attach_error":
@@ -382,6 +384,7 @@ async def _bridge_terminal(
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "select-window", "-t",
                                          f"{session_name}:{win_idx}"],
+                                "source": source,
                             })
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
                             logger.debug("Bridge select-window failed: %s", e)
@@ -396,12 +399,14 @@ async def _bridge_terminal(
                                     "type": "tmux_cmd",
                                     "cmd": ["tmux", "copy-mode", "-e",
                                              "-t", session_name],
+                                    "source": source,
                                 })
                                 await conn.request({
                                     "type": "tmux_cmd",
                                     "cmd": ["tmux", "send-keys",
                                              "-t", session_name,
                                              "-X", "-N", count, "scroll-up"],
+                                    "source": source,
                                 })
                             elif direction == "down":
                                 count = parts[2] if len(parts) > 2 else "3"
@@ -410,6 +415,7 @@ async def _bridge_terminal(
                                     "cmd": ["tmux", "send-keys",
                                              "-t", session_name,
                                              "-X", "-N", count, "scroll-down"],
+                                    "source": source,
                                 })
                             elif direction == "exit":
                                 await conn.request({
@@ -417,6 +423,7 @@ async def _bridge_terminal(
                                     "cmd": ["tmux", "send-keys",
                                              "-t", session_name,
                                              "-X", "cancel"],
+                                    "source": source,
                                 })
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
                             logger.debug("Bridge scroll failed: %s", e)
@@ -428,6 +435,7 @@ async def _bridge_terminal(
                                 "cmd": ["tmux", "send-keys", "-l",
                                          "-t", session_name, "--",
                                          "\x1b[13;2u"],
+                                "source": source,
                             })
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
                             logger.debug("Bridge shift-enter failed: %s", e)
@@ -437,6 +445,7 @@ async def _bridge_terminal(
                             await conn.request({
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "set-option", "-g", "mouse", "off"],
+                                "source": source,
                             })
                             await websocket.send_text("MOUSE_WARNING:off")
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
@@ -448,11 +457,13 @@ async def _bridge_terminal(
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "set-option", "-g",
                                          "bell-action", "any"],
+                                "source": source,
                             })
                             await conn.request({
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "set-option", "-g",
                                          "visual-bell", "off"],
+                                "source": source,
                             })
                             await websocket.send_text("BELL_WARNING:ok")
                         except (ValueError, asyncio.TimeoutError, Exception) as e:

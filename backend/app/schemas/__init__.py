@@ -36,6 +36,7 @@ class TmuxSessionResponse(CamelModel):
     created: str
     attached: bool
     summary: str | None = None
+    source: str | None = None
 
 
 class CreateSessionRequest(CamelModel):

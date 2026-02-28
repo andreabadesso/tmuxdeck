@@ -7,10 +7,9 @@ name = "tmuxdeck-bridge"
 version = "0.1.0"
 description = "TmuxDeck bridge agent — connects remote tmux to TmuxDeck backend"
 requires-python = ">=3.10"
-dependencies = ["websockets>=12.0"]
+dependencies = ["websockets>=12.0", "docker>=7.0"]
 
 [project.optional-dependencies]
-docker = ["docker>=7.0"]
 dev = [
     "ruff>=0.8",
     "pytest>=8.0",

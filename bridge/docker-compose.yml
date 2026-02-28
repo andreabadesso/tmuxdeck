@@ -5,8 +5,13 @@ services:
     network_mode: host
     volumes:
       - ${TMUX_SOCKET_DIR:-/tmp/tmux-1000}:/tmp/tmux-host
+      # Mount Docker socket to expose other containers' tmux sessions
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
+      - DOCKER_SOCKET=/var/run/docker.sock
+      # Optional: filter containers by label (e.g. DOCKER_LABEL=tmuxdeck=true)
+      # - DOCKER_LABEL=
     env_file:
       - .env
     restart: unless-stopped

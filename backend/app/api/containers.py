@@ -21,7 +21,7 @@ from ..schemas import (
     TmuxSessionResponse,
 )
 from ..services.docker_manager import DockerManager
-from ..services.bridge_manager import BRIDGE_PREFIX, BridgeManager, is_bridge
+from ..services.bridge_manager import BRIDGE_PREFIX, BridgeManager, bridge_source_from_container, is_bridge
 from ..services.tmux_manager import (
     HOST_CONTAINER_ID,
     LOCAL_CONTAINER_ID,
@@ -141,20 +141,43 @@ async def list_containers():
         host = await _build_host_container(tm)
         results.append(host)
 
-    # Bridge containers
+    # Bridge containers — one per source (local, host, docker:*)
     bm = BridgeManager.get()
     for conn in bm.list_bridges():
-        sessions = [TmuxSessionResponse(**s) for s in conn.sessions]
-        results.append(ContainerResponse(
-            id=f"{BRIDGE_PREFIX}{conn.bridge_id}",
-            name=conn.name,
-            display_name=conn.name,
-            status="running",
-            image="bridge",
-            container_type="bridge",
-            sessions=sessions,
-            created_at=datetime.now(UTC).isoformat(),
-        ))
+        # Group sessions by source — ensure at least one container is
+        # visible even when the bridge has no tmux sessions yet.
+        by_source: dict[str, list[dict]] = {}
+        # Seed with all configured sources so empty sources still get a container
+        for src in conn.sources:
+            by_source.setdefault(src, [])
+        for s in conn.sessions:
+            src = s.get("source", "local")
+            by_source.setdefault(src, []).append(s)
+        if not by_source:
+            by_source["local"] = []  # legacy fallback for old bridges
+
+        for source, source_sessions in by_source.items():
+            container_id = f"{BRIDGE_PREFIX}{conn.bridge_id}:{source}"
+            if source == "local":
+                display = f"{conn.name} (Local)"
+            elif source == "host":
+                display = f"{conn.name} (Host)"
+            elif source.startswith("docker:"):
+                docker_id = source.split(":", 1)[1]
+                display = f"{conn.name} ({docker_id})"
+            else:
+                display = conn.name
+
+            results.append(ContainerResponse(
+                id=container_id,
+                name=conn.name,
+                display_name=display,
+                status="running",
+                image="bridge",
+                container_type="bridge",
+                sessions=[TmuxSessionResponse(**s) for s in source_sessions],
+                created_at=datetime.now(UTC).isoformat(),
+            ))
 
     # Docker containers (gracefully skip if Docker is unavailable)
     docker_error: str | None = None
@@ -462,11 +485,24 @@ async def get_container(container_id: str):
         conn = bm.get_bridge_for_container(container_id)
         if not conn:
             raise HTTPException(404, f"Bridge {container_id} not connected")
-        sessions = [TmuxSessionResponse(**s) for s in conn.sessions]
+        source = bridge_source_from_container(container_id)
+        source_sessions = [s for s in conn.sessions if s.get("source") == source]
+        sessions = [TmuxSessionResponse(**s) for s in source_sessions]
+
+        if source == "local":
+            display = f"{conn.name} (Local)"
+        elif source == "host":
+            display = f"{conn.name} (Host)"
+        elif source.startswith("docker:"):
+            docker_id = source.split(":", 1)[1]
+            display = f"{conn.name} ({docker_id})"
+        else:
+            display = conn.name
+
         return ContainerResponse(
             id=container_id,
             name=conn.name,
-            display_name=conn.name,
+            display_name=display,
             status="running",
             image="bridge",
             container_type="bridge",

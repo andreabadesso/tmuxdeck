@@ -8,6 +8,8 @@
   <a href="#features">Features</a> &bull;
   <a href="#keyboard-shortcuts">Shortcuts</a> &bull;
   <a href="#configuration">Configuration</a> &bull;
+  <a href="#bridge-setup">Bridges</a> &bull;
+  <a href="#cli">CLI</a> &bull;
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -27,6 +29,9 @@ If you run multiple Docker containers with tmux sessions inside them — for AI 
 - **Drag-and-drop** to reorder sessions and move windows between them
 - **Create containers from Dockerfile templates** with one click
 - **Host tmux too** — manage sessions on the host machine, not just containers
+- **Remote bridges** — manage tmux on remote machines via a lightweight WebSocket agent
+- **Nix packaging** — run as a native service via Home Manager (no Docker required)
+- **CLI tool** — list sessions, capture text, take screenshots from the command line
 
 ## Quick Start
 
@@ -63,6 +68,32 @@ npm run dev
 ```
 
 Open **http://localhost:5173** — Vite proxies `/api/*` and `/ws/*` to the backend automatically.
+
+### Nix / Home Manager
+
+Install directly with Nix:
+
+```bash
+nix profile install github:msbrogli/tmuxdeck
+tmuxdeck  # starts on http://127.0.0.1:8000
+```
+
+Or enable as a Home Manager service:
+
+```nix
+{
+  services.tmuxdeck = {
+    enable = true;
+    port = 8000;
+    host = "127.0.0.1";
+    dataDir = "~/.local/share/tmuxdeck";
+    dockerSocket = "/var/run/docker.sock";
+    environmentFile = ./secrets/tmuxdeck.env;  # optional, for TELEGRAM_BOT_TOKEN etc.
+  };
+}
+```
+
+On Linux this creates a systemd user service; on macOS a launchd agent. Both restart on failure automatically.
 
 ### Mock Mode (no backend needed)
 
@@ -115,13 +146,49 @@ Create and edit Dockerfile templates with Monaco editor syntax highlighting. Eac
 
 Not just Docker — TmuxDeck can manage tmux sessions on the host machine and on the machine running the backend. The special container IDs `host` and `local` appear in the sidebar alongside your Docker containers.
 
+### Remote Bridges
+
+Manage tmux sessions on remote machines via a lightweight agent (`tmuxdeck-bridge`) that connects back over a single WebSocket. The bridge multiplexes JSON control frames and binary terminal I/O on one connection. It supports local, host-socket, and Docker discovery on the remote side and auto-reconnects with exponential backoff. See [Bridge Setup](#bridge-setup) for details.
+
+### Configurable Keyboard Shortcuts
+
+All hotkeys are user-configurable from Settings. Click any binding to record a new key combination. Changes are persisted to `settings.json` and take effect immediately.
+
+### Container Fold/Unfold
+
+Collapse containers in the sidebar with Ctrl+Left/Right. Folded containers show a preview overlay listing sessions with status indicators (idle, busy, waiting, attention). Use arrow keys to navigate the preview and Enter to select a session.
+
+### Telegram Session Management
+
+Telegram bot commands for remote session interaction:
+
+- `/list` — browse sessions with inline keyboard navigation and status emoji
+- `/screenshot <session>` — receive a PNG screenshot of a session pane
+- `/capture <session>` — receive pane text content
+- `/talk <session>` — enter talk mode, sending keystrokes from Telegram to the terminal
+- `/cancel` — exit talk mode
+
+Reply to any notification or screenshot message to send text directly to that session.
+
+### CLI Tool
+
+`tmuxdeck list`, `tmuxdeck capture`, and `tmuxdeck screenshot` provide command-line access to session data. ANSI-to-PNG rendering uses pyte + Pillow. See [CLI](#cli) for usage.
+
+### Debug Log
+
+In-memory ring buffer (2000 entries) merging backend and frontend logs. Viewable in Settings > Log tab with level/source filtering and auto-refresh. Frontend logs are prefixed with `ui:`.
+
+### Notification Channels
+
+Notifications support a `channels` field (`web`, `os`, `telegram`) for delivery routing. If `telegram` is enabled but `web` is not, the message is sent to Telegram immediately; otherwise Telegram acts as a fallback after a configurable timeout. Deduplication prevents notification floods for the same container/session/window.
+
+### Silent Activity Monitoring
+
+Tmux `monitor-activity` is auto-enabled with `activity-action none`, powering sidebar activity indicators without audible bells.
+
 ### PIN Authentication
 
 Optional PIN-based authentication protects the dashboard. No user management overhead — set a PIN in Settings and sessions last 7 days.
-
-### Notifications
-
-Bell and activity flags from tmux show as icons in the sidebar. When a process finishes or needs attention, you see it without switching.
 
 ### Mouse Mode Detection
 
@@ -136,9 +203,11 @@ When tmux mouse mode is enabled (which breaks browser text selection), TmuxDeck 
 | `Ctrl+1` - `Ctrl+0` | Jump to assigned window |
 | `Ctrl+Alt+1` - `Ctrl+Alt+0` | Assign/unassign digit to current window |
 | `Ctrl+Up` / `Ctrl+Down` | Previous / next window |
+| `Ctrl+Left` / `Ctrl+Right` | Fold / unfold container |
+| `Shift+Ctrl+Up` / `Shift+Ctrl+Down` | Move window up / down |
 | `Esc` `Esc` | Deselect current session |
 
-All tmux keybindings (Ctrl-B + w, Ctrl-B + c, etc.) pass through natively.
+All shortcuts are configurable in Settings. All tmux keybindings (Ctrl-B + w, Ctrl-B + c, etc.) pass through natively.
 
 ## Configuration
 
@@ -146,11 +215,12 @@ All tmux keybindings (Ctrl-B + w, Ctrl-B + c, etc.) pass through natively.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATA_DIR` | `/data` | Directory for settings and template data (JSON files) |
+| `DATA_DIR` | `/data` | Directory for settings and template data (JSON files). Defaults to `~/.local/share/tmuxdeck` when running via Nix. |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path |
 | `CONTAINER_NAME_PREFIX` | `tmuxdeck` | Prefix for managed container names |
 | `TEMPLATES_DIR` | `/app/docker/templates` | Path to seed Dockerfile templates |
 | `HOST_TMUX_SOCKET` | *(none)* | Host tmux socket for host session access |
+| `STATIC_DIR` | *(none)* | Path to frontend static files (used by Nix package) |
 | `TELEGRAM_BOT_TOKEN` | *(none)* | Telegram bot token for text interaction |
 | `TELEGRAM_ALLOWED_USERS` | *(none)* | Comma-separated Telegram user IDs |
 
@@ -160,6 +230,10 @@ All tmux keybindings (Ctrl-B + w, Ctrl-B + c, etc.) pass through natively.
 - **SSH key path** — auto-mount SSH keys into containers for private repo access
 - **Terminal pool size** — how many background connections to keep alive (1-32)
 - **Telegram bot** — token and allowed users for text-based session interaction
+- **Telegram chats** — manage registered Telegram chats (list, remove)
+- **Keyboard shortcuts** — customize all hotkeys from the UI
+- **Bridges** — create and manage bridge connections to remote machines
+- **Debug log** — view merged backend + frontend debug log with filtering
 
 ## Architecture
 
@@ -172,6 +246,12 @@ Browser (React + xterm.js)
                                 |--- docker-py ---> Docker Engine
                                 |--- docker exec ---> tmux inside containers
                                 |--- tmux (local) ---> host/local sessions
+                                |
+                                |--- WS /ws/bridge <--- tmuxdeck-bridge agent(s)
+                                                            |
+                                                            |--- tmux (local)
+                                                            |--- tmux (host socket)
+                                                            |--- docker exec ---> remote containers
 ```
 
 ### Tech Stack
@@ -184,7 +264,7 @@ Browser (React + xterm.js)
 | Template editor | Monaco Editor |
 | Data fetching | TanStack Query |
 | Package managers | uv (backend), npm (frontend) |
-| Deployment | Docker Compose, nginx |
+| Deployment | Docker Compose, nginx, Nix |
 
 ### Project Structure
 
@@ -192,23 +272,55 @@ Browser (React + xterm.js)
 tmuxdeck/
 ├── backend/                # Python 3.12 + FastAPI
 │   ├── app/
-│   │   ├── api/            # REST endpoints (auth, containers, sessions, templates, settings)
-│   │   ├── ws/             # WebSocket terminal handler
-│   │   ├── services/       # Docker manager, tmux manager
-│   │   └── schemas/        # Pydantic request/response models
+│   │   ├── api/            # REST endpoints
+│   │   │   ├── auth.py
+│   │   │   ├── bridges.py
+│   │   │   ├── containers.py
+│   │   │   ├── debug_log.py
+│   │   │   ├── notifications.py
+│   │   │   ├── sessions.py
+│   │   │   ├── settings.py
+│   │   │   └── templates.py
+│   │   ├── ws/             # WebSocket handlers
+│   │   │   ├── terminal.py
+│   │   │   └── bridge.py
+│   │   ├── services/       # Business logic
+│   │   │   ├── bridge_manager.py
+│   │   │   ├── debug_log.py
+│   │   │   ├── docker_manager.py
+│   │   │   ├── notification_manager.py
+│   │   │   ├── render.py
+│   │   │   ├── telegram_bot.py
+│   │   │   └── tmux_manager.py
+│   │   ├── schemas/        # Pydantic request/response models
+│   │   ├── cli.py          # CLI tool (tmuxdeck list/capture/screenshot)
+│   │   └── config.py
 │   ├── tests/              # pytest test suite
 │   └── pyproject.toml      # Dependencies (managed with uv)
 │
+├── bridge/                 # Standalone bridge agent
+│   ├── tmuxdeck_bridge/
+│   │   ├── __main__.py
+│   │   ├── bridge.py
+│   │   ├── config.py
+│   │   └── terminal.py
+│   └── pyproject.toml
+│
 ├── frontend/               # React 18 + TypeScript + Vite
 │   └── src/
-│       ├── components/     # Sidebar, Terminal, SessionSwitcher, ContainerNode, ...
-│       ├── hooks/          # Terminal pool, keyboard shortcuts
-│       ├── pages/          # MainPage, TemplatesPage, SettingsPage
+│       ├── components/     # Sidebar, Terminal, SessionSwitcher, FoldedContainerPreview, ...
+│       ├── hooks/          # Terminal pool, keyboard shortcuts, useContainerExpandedState
+│       ├── pages/          # MainPage, TemplatesPage, SettingsPage, BridgeSettingsPage, DebugLogPage
+│       ├── utils/          # hotkeys, debugLog
 │       ├── mocks/          # Mock API for development without backend
 │       └── api/            # API client
 │
+├── nix/
+│   └── hm-module.nix      # Home Manager module (systemd + launchd)
+├── scripts/                # Shell helpers (tmuxdeck-notify, tmuxdeck-install-hooks, ...)
 ├── docker/
 │   └── templates/          # Bundled Dockerfile templates
+├── flake.nix               # Nix flake (packages + HM module)
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -219,7 +331,7 @@ tmuxdeck/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/v1/containers` | List all containers (Docker + host + local) |
+| GET | `/api/v1/containers` | List all containers (Docker + host + local + bridge) |
 | POST | `/api/v1/containers` | Create container from template |
 | GET | `/api/v1/containers/{id}` | Get container details |
 | PATCH | `/api/v1/containers/{id}` | Rename container |
@@ -238,10 +350,46 @@ tmuxdeck/
 | POST | `.../sessions/{sid}/windows` | Create window |
 | POST | `.../sessions/{sid}/swap-windows` | Swap two windows |
 | POST | `.../sessions/{sid}/move-window` | Move window to another session |
+| POST | `.../sessions/{sid}/clear-status` | Clear all window statuses in session |
+| POST | `.../sessions/{sid}/windows/{idx}/clear-status` | Clear single window status |
+
+### Bridges
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/bridges` | List configured bridges |
+| POST | `/api/v1/bridges` | Create bridge (returns token) |
+| PATCH | `/api/v1/bridges/{id}` | Enable/disable bridge |
+| DELETE | `/api/v1/bridges/{id}` | Delete bridge |
+
+### Notifications
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/notifications` | Create notification |
+| POST | `/api/v1/notifications/dismiss` | Dismiss notification |
+| GET | `/api/v1/notifications` | List pending notifications |
+| GET | `/api/v1/notifications/stream` | SSE notification stream |
+
+### Debug Log
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/debug-log` | Get debug log entries |
+| DELETE | `/api/v1/debug-log` | Clear debug log |
+
+### Telegram Chats
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/settings/telegram-chats` | List registered chats |
+| DELETE | `/api/v1/settings/telegram-chats/{id}` | Unregister a chat |
 
 ### Terminal (WebSocket)
 
 Connect to `WS /ws/terminal/{container_id}/{session_name}/{window_index}` for an interactive terminal. Control messages: `RESIZE:cols:rows`, `SCROLL:up:N`, `SCROLL:down:N`, `SELECT_WINDOW:index`, `DISABLE_MOUSE:`.
+
+For bridge-sourced sessions, terminal traffic is proxied over the bridge WebSocket (`/ws/bridge`) rather than direct container exec.
 
 ### Templates & Settings
 
@@ -250,6 +398,101 @@ Connect to `WS /ws/terminal/{container_id}/{session_name}/{window_index}` for an
 | GET/POST | `/api/v1/templates` | List / create templates |
 | GET/PUT/DELETE | `/api/v1/templates/{id}` | Read / update / delete template |
 | GET/POST | `/api/v1/settings` | Get / update settings |
+
+## Bridge Setup
+
+Remote bridges let you manage tmux sessions on machines that aren't running TmuxDeck directly. A lightweight agent (`tmuxdeck-bridge`) connects back to the TmuxDeck backend over a single WebSocket.
+
+### 1. Create a bridge in Settings
+
+Open Settings > Bridges and click **Add Bridge**. Give it a name and copy the generated token — it is shown only once.
+
+### 2. Run the bridge agent
+
+```bash
+# Install
+cd bridge
+uv sync
+
+# Run
+tmuxdeck-bridge --url ws://your-server:8000/ws/bridge --token <TOKEN> --name my-remote
+```
+
+The agent discovers local tmux sessions by default. To also discover sessions via a host socket or Docker containers:
+
+```bash
+tmuxdeck-bridge \
+  --url ws://your-server:8000/ws/bridge \
+  --token <TOKEN> \
+  --host-tmux-socket /tmp/tmux-host/default \
+  --docker-socket /var/run/docker.sock
+```
+
+### 3. Docker Compose deployment
+
+```yaml
+services:
+  bridge:
+    build: ./bridge
+    environment:
+      BRIDGE_URL: ws://tmuxdeck-server:8000/ws/bridge
+      BRIDGE_TOKEN: <TOKEN>
+      BRIDGE_NAME: my-remote
+    restart: unless-stopped
+```
+
+### CLI flags and environment variables
+
+| Flag | Env Var | Default | Description |
+|---|---|---|---|
+| `--url` | `BRIDGE_URL` | *(required)* | Backend WebSocket URL |
+| `--token` | `BRIDGE_TOKEN` | *(required)* | Authentication token |
+| `--name` | `BRIDGE_NAME` | hostname | Display name |
+| `--no-local` | — | false | Disable local tmux discovery |
+| `--host-tmux-socket` | `HOST_TMUX_SOCKET` | *(none)* | Host tmux socket path |
+| `--docker-socket` | `DOCKER_SOCKET` | *(none)* | Docker socket for container discovery |
+| `--docker-label` | `DOCKER_LABEL` | *(none)* | Docker container label filter |
+| `--report-interval` | — | `5.0` | Session report interval (seconds) |
+| `-6` / `--ipv6` | — | false | Use IPv6 |
+
+The agent auto-reconnects with exponential backoff (5s min, 60s max).
+
+## CLI
+
+The `tmuxdeck` CLI provides command-line access to session data.
+
+```bash
+cd backend
+uv sync
+```
+
+### List sessions
+
+```bash
+tmuxdeck list                        # all sessions
+tmuxdeck list --filter attention     # only sessions needing attention
+tmuxdeck list --filter running       # only busy sessions
+tmuxdeck list --filter idle          # only idle sessions
+```
+
+### Capture pane text
+
+```bash
+tmuxdeck capture <session_id>                  # print to stdout
+tmuxdeck capture <session_id> -o output.txt    # save to file
+tmuxdeck capture <session_id> -w 2             # specific window
+tmuxdeck capture <session_id> --ansi           # include ANSI escape sequences
+```
+
+### Screenshot pane
+
+```bash
+tmuxdeck screenshot <session_id>                  # saves screenshot.png
+tmuxdeck screenshot <session_id> -o my-shot.png   # custom output path
+tmuxdeck screenshot <session_id> -w 1             # specific window
+```
+
+Screenshots are rendered from ANSI text using pyte + Pillow.
 
 ## Contributing
 

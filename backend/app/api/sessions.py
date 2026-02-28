@@ -14,18 +14,22 @@ router = APIRouter(prefix="/api/v1/containers/{container_id}/sessions", tags=["s
 
 
 async def _refresh_bridge_sessions(container_id: str) -> None:
-    """Refresh cached session list for a bridge container."""
+    """Refresh cached session list for a bridge container.
+
+    Sends a list_sessions request to the bridge, which triggers a fresh
+    _collect_sessions on the bridge side and updates conn.sessions via
+    the normal session report flow.
+    """
     if not is_bridge(container_id):
         return
     bm = BridgeManager.get()
     conn = bm.get_bridge_for_container(container_id)
     if not conn:
         return
-    tm = TmuxManager.get()
     try:
-        conn.sessions = await tm.list_sessions(container_id)
+        await conn.send_json({"type": "list_sessions"})
     except Exception:
-        logger.debug("Failed to refresh bridge sessions for %s", container_id)
+        logger.debug("Failed to request bridge session refresh for %s", container_id)
 
 
 @router.get("", response_model=list[TmuxSessionResponse])

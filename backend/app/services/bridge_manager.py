@@ -22,7 +22,27 @@ def is_bridge(container_id: str) -> bool:
 
 
 def bridge_id_from_container(container_id: str) -> str:
-    return container_id[len(BRIDGE_PREFIX):]
+    """Extract bridge ID from container_id.
+
+    "bridge:abc123:local" → "abc123"
+    "bridge:abc123:host" → "abc123"
+    "bridge:abc123:docker:def456" → "abc123"
+    "bridge:abc123" → "abc123"  (legacy format)
+    """
+    parts = container_id.split(":", 2)
+    return parts[1] if len(parts) >= 2 else ""
+
+
+def bridge_source_from_container(container_id: str) -> str:
+    """Extract source from container_id.
+
+    "bridge:abc123:local" → "local"
+    "bridge:abc123:host" → "host"
+    "bridge:abc123:docker:def456" → "docker:def456"
+    "bridge:abc123" → "local"  (legacy format, default to local)
+    """
+    parts = container_id.split(":", 2)
+    return parts[2] if len(parts) >= 3 else "local"
 
 
 class BridgeConnection:
@@ -33,6 +53,7 @@ class BridgeConnection:
         self.name = name
         self.ws = ws
         self.sessions: list[dict] = []
+        self.sources: list[str] = []
         self._pending: dict[str, asyncio.Future] = {}
         self._terminal_relays: dict[int, WebSocket] = {}  # channel_id → user WS
         self._next_channel: int = 1
@@ -53,6 +74,13 @@ class BridgeConnection:
 
     def get_terminal_ws(self, channel_id: int) -> WebSocket | None:
         return self._terminal_relays.get(channel_id)
+
+    def get_session_source(self, session_name: str) -> str | None:
+        """Look up the source tag for a session by name."""
+        for s in self.sessions:
+            if s.get("name") == session_name:
+                return s.get("source")
+        return None
 
     async def send_json(self, msg: dict) -> None:
         await self.ws.send_text(json.dumps(msg))
