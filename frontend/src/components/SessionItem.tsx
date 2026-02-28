@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check } from 'lucide-react';
+import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check, CircleOff } from 'lucide-react';
 import type { TmuxSession, TmuxWindow, SessionTarget, Selection } from '../types';
 import { isFoldedSelection } from '../types';
 import { api } from '../api/client';
@@ -475,6 +475,19 @@ export function SessionItem({
           </span>
         )}
 
+        {session.windows.some((w) => getPaneState(w) !== 'idle') && (
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              await api.clearSessionStatus(containerId, session.id);
+              onRefresh();
+            }}
+            className="p-0.5 rounded hover:bg-gray-700 text-gray-500 hover:text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            title="Clear all pane statuses"
+          >
+            <CircleOff size={12} />
+          </button>
+        )}
         <button
           onClick={handleKill}
           className="p-0.5 rounded hover:bg-gray-700 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
@@ -526,10 +539,24 @@ export function SessionItem({
                 <AppWindow size={11} className="shrink-0 mr-1" />
                 {(() => {
                   const state = getPaneState(win);
+                  const title = `${stateLabels[state]}${win.command ? ` (${win.command})` : ''}`;
+                  if (state !== 'idle') {
+                    return (
+                      <button
+                        className={`shrink-0 mr-1 inline-block w-1.5 h-1.5 rounded-full ${stateColors[state]} cursor-pointer hover:opacity-60 transition-opacity`}
+                        title={`${title} — click to clear`}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await api.clearWindowStatus(containerId, session.id, win.index);
+                          onRefresh();
+                        }}
+                      />
+                    );
+                  }
                   return (
                     <span
                       className={`shrink-0 mr-1 inline-block w-1.5 h-1.5 rounded-full ${stateColors[state]}`}
-                      title={`${stateLabels[state]}${win.command ? ` (${win.command})` : ''}`}
+                      title={title}
                     />
                   );
                 })()}

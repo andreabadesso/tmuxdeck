@@ -198,6 +198,14 @@ export const httpApi: ApiClient = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  clearWindowStatus: (containerId: string, sessionId: string, windowIndex: number) =>
+    request<void>(`/containers/${containerId}/sessions/${sessionId}/windows/${windowIndex}/clear-status`, {
+      method: 'POST',
+    }),
+  clearSessionStatus: (containerId: string, sessionId: string) =>
+    request<void>(`/containers/${containerId}/sessions/${sessionId}/clear-status`, {
+      method: 'POST',
+    }),
 
   // Templates
   listTemplates: () => request<Template[]>('/templates'),

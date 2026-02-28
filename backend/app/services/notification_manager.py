@@ -196,16 +196,23 @@ class NotificationManager:
         from .tmux_manager import TmuxManager
 
         tm = TmuxManager.get()
-        target = f"{record.tmux_session}:{record.tmux_window}"
         container_id = record.container_id
+        window_index = int(record.tmux_window) if record.tmux_window.isdigit() else 0
 
         try:
-            # Send the text followed by Enter
-            await tm._run_cmd(container_id, ["tmux", "send-keys", "-t", target, text, "Enter"])
-            logger.info(
-                "Sent reply to terminal: container=%s target=%s",
+            await tm.send_keys(
                 container_id,
-                target,
+                record.tmux_session,
+                window_index,
+                text,
+                enter=False,
+                submit=True,
+            )
+            logger.info(
+                "Sent reply to terminal: container=%s session=%s window=%s",
+                container_id,
+                record.tmux_session,
+                record.tmux_window,
             )
         except Exception:
             logger.exception("Failed to send reply to terminal")

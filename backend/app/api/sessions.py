@@ -94,6 +94,36 @@ async def create_window(container_id: str, session_id: str, req: CreateWindowReq
     return [TmuxWindowResponse(**w) for w in windows]
 
 
+@router.post("/{session_id}/windows/{window_index}/clear-status", status_code=204)
+async def clear_window_status(container_id: str, session_id: str, window_index: int):
+    tm = TmuxManager.get()
+
+    session_name = await tm.resolve_session_id(container_id, session_id)
+    if session_name is None:
+        session_name = session_id
+
+    try:
+        await tm.set_pane_status(container_id, session_name, window_index, "idle")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to clear window status: {e}") from None
+
+
+@router.post("/{session_id}/clear-status", status_code=204)
+async def clear_session_status(container_id: str, session_id: str):
+    tm = TmuxManager.get()
+
+    session_name = await tm.resolve_session_id(container_id, session_id)
+    if session_name is None:
+        session_name = session_id
+
+    try:
+        windows = await tm.list_windows(container_id, session_name)
+        for win in windows:
+            await tm.set_pane_status(container_id, session_name, win["index"], "idle")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to clear session status: {e}") from None
+
+
 @router.delete("/{session_id}", status_code=204)
 async def kill_session(container_id: str, session_id: str):
     tm = TmuxManager.get()

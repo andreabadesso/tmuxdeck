@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# tmuxdeck-status — diagnostic tool to inspect raw tmux state across all sessions/windows.
+# Shows the same fields the backend queries in tmux_manager.py.
+
+set -euo pipefail
+
+if ! tmux info &>/dev/null; then
+  echo "No tmux server running." >&2
+  exit 1
+fi
+
+fmt='#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{@pane_status}|#{window_bell_flag}|#{window_activity_flag}|#{pane_title}'
+
+header="SESSION|WIN|NAME|COMMAND|@pane_status|BELL|ACTIVITY|TITLE"
+
+{
+  echo "$header"
+  tmux list-windows -a -F "$fmt"
+} | column -t -s '|'

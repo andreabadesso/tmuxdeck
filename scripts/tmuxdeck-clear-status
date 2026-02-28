@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# tmuxdeck-clear-status — clear @pane_status from tmux panes.
+#
+# Usage:
+#   tmuxdeck-clear-status              # clear all panes
+#   tmuxdeck-clear-status <pattern>    # clear panes matching pattern
+#
+# The pattern is matched (grep -i) against: session:window command @pane_status
+# Examples:
+#   tmuxdeck-clear-status ngrok        # panes running ngrok
+#   tmuxdeck-clear-status elephant     # panes in "elephant" session
+#   tmuxdeck-clear-status attention    # panes with @pane_status=attention
+
+set -euo pipefail
+
+if ! tmux info &>/dev/null; then
+  echo "No tmux server running." >&2
+  exit 1
+fi
+
+filter="${1:-}"
+fmt='#{session_name}:#{window_index}.#{pane_index}|#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{@pane_status}'
+cleared=0
+
+while IFS='|' read -r target session win name cmd status; do
+  # Build a matchable string from all fields
+  match="$session $win $name $cmd $status"
+
+  if [[ -n "$filter" ]] && ! echo "$match" | grep -qi "$filter"; then
+    continue
+  fi
+
+  # Skip panes that already have no status
+  if [[ -z "$status" ]]; then
+    continue
+  fi
+
+  tmux set-option -p -t "$target" @pane_status ""
+  echo "cleared $session:$win ($name) [was: $status]"
+  ((cleared++)) || true
+done < <(tmux list-panes -a -F "$fmt")
+
+if [[ $cleared -eq 0 ]]; then
+  if [[ -n "$filter" ]]; then
+    echo "No matching panes with @pane_status set (filter: $filter)"
+  else
+    echo "No panes with @pane_status set"
+  fi
+else
+  echo "Cleared $cleared pane(s)"
+fi

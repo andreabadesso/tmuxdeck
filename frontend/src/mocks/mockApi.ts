@@ -177,6 +177,25 @@ export const mockApi: ApiClient = {
     }
   },
 
+  async clearWindowStatus(containerId: string, sessionId: string, windowIndex: number) {
+    await delay();
+    const c = containers.find((c) => c.id === containerId);
+    if (!c) throw new Error(`Container ${containerId} not found`);
+    const s = c.sessions.find((s) => s.id === sessionId);
+    if (!s) throw new Error(`Session ${sessionId} not found`);
+    const w = s.windows.find((w) => w.index === windowIndex);
+    if (w) w.paneStatus = 'idle';
+  },
+
+  async clearSessionStatus(containerId: string, sessionId: string) {
+    await delay();
+    const c = containers.find((c) => c.id === containerId);
+    if (!c) throw new Error(`Container ${containerId} not found`);
+    const s = c.sessions.find((s) => s.id === sessionId);
+    if (!s) throw new Error(`Session ${sessionId} not found`);
+    for (const w of s.windows) w.paneStatus = 'idle';
+  },
+
   // Templates
   async listTemplates() {
     await delay();

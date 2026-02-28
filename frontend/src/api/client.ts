@@ -29,6 +29,8 @@ export interface ApiClient {
   swapWindows(containerId: string, sessionId: string, index1: number, index2: number): Promise<void>;
   moveWindow(containerId: string, sessionId: string, windowIndex: number, targetSessionId: string): Promise<void>;
   createWindow(containerId: string, sessionId: string, req: CreateWindowRequest): Promise<TmuxWindow[]>;
+  clearWindowStatus(containerId: string, sessionId: string, windowIndex: number): Promise<void>;
+  clearSessionStatus(containerId: string, sessionId: string): Promise<void>;
 
   // Templates
   listTemplates(): Promise<Template[]>;

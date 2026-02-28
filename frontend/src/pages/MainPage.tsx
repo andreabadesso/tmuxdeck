@@ -231,11 +231,19 @@ export function MainPage() {
           const showWeb = !ch || ch.length === 0 || ch.includes('web');
           const showOs = !ch || ch.length === 0 || ch.includes('os');
 
+          // Build a descriptive title including terminal identification
+          const containers = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+          const container = containers?.find(c => c.id === notif.containerId);
+          const containerName = container?.displayName ?? notif.containerId;
+          const sessionLabel = notif.tmuxSession != null
+            ? `${containerName} · ${notif.tmuxSession}:${notif.tmuxWindow ?? 0}`
+            : (notif.title || 'Claude Code');
+
           // Show in-app toast if web channel enabled
           if (showWeb) {
             addToast({
-              title: notif.title || 'Claude Code',
-              message: notif.message || 'Needs attention',
+              title: sessionLabel,
+              message: notif.message || notif.title || 'Needs attention',
               onClick: notif.containerId && notif.tmuxSession != null
                 ? () => selectSession(notif.containerId, notif.tmuxSession, notif.tmuxWindow ?? 0)
                 : undefined,
@@ -245,8 +253,8 @@ export function MainPage() {
           // Fire browser notification if os channel enabled and permission granted
           if (showOs && 'Notification' in window) {
             if (Notification.permission === 'granted') {
-              const n = new window.Notification(notif.title || 'Claude Code', {
-                body: notif.message || 'Needs attention',
+              const n = new window.Notification(sessionLabel, {
+                body: notif.message || notif.title || 'Needs attention',
                 tag: `claude-${notif.id}`,
               });
               n.onclick = () => {
@@ -268,7 +276,7 @@ export function MainPage() {
     };
 
     return () => evtSource.close();
-  }, [selectSession, addToast]);
+  }, [selectSession, addToast, queryClient]);
 
   const escTimestampRef = useRef<number>(0);
 

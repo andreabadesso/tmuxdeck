@@ -213,6 +213,63 @@ class TmuxManager:
                 return s["name"]
         return None
 
+    async def capture_pane(
+        self, container_id: str, session_name: str, window_index: int = 0, ansi: bool = False
+    ) -> str:
+        """Capture the content of a tmux pane.
+
+        When ansi=True, includes ANSI escape sequences (colors, bold).
+        """
+        cmd = ["tmux", "capture-pane", "-p", "-t", f"{session_name}:{window_index}"]
+        if ansi:
+            cmd.insert(3, "-e")  # insert -e before -t
+        return await self._run_cmd(container_id, cmd)
+
+    async def get_pane_width(
+        self, container_id: str, session_name: str, window_index: int = 0
+    ) -> int:
+        """Return the width (columns) of a tmux pane."""
+        out = await self._run_cmd(container_id, [
+            "tmux", "display-message", "-p", "-t",
+            f"{session_name}:{window_index}", "#{pane_width}",
+        ])
+        return int(out.strip())
+
+    async def send_keys(
+        self,
+        container_id: str,
+        session_name: str,
+        window_index: int,
+        text: str,
+        enter: bool = True,
+        submit: bool = False,
+    ) -> None:
+        """Send keys to a tmux pane.
+
+        enter: append a single Enter keypress.
+        submit: append two Enter keypresses (submits in Claude Code).
+        """
+        cmd = ["tmux", "send-keys", "-t", f"{session_name}:{window_index}", text]
+        if submit:
+            cmd += ["Enter", "Enter"]
+        elif enter:
+            cmd.append("Enter")
+        await self._run_cmd(container_id, cmd)
+
+    async def resolve_session_id_global(self, session_id: str) -> tuple[str, str] | None:
+        """Resolve a session ID across all containers.
+
+        Returns (container_id, session_name) or None if not found.
+        """
+        from ..api.containers import list_containers
+
+        resp = await list_containers()
+        for container in resp.containers:
+            for session in container.sessions:
+                if session.id == session_id:
+                    return (container.id, session.name)
+        return None
+
     async def swap_windows(self, container_id: str, session_name: str, index1: int, index2: int) -> None:
         """Swap two windows within the same tmux session."""
         await self._run_cmd(container_id, [
@@ -239,6 +296,12 @@ class TmuxManager:
             cmd += ["-n", window_name]
         await self._run_cmd(container_id, cmd)
         return await self.list_windows(container_id, session_name)
+
+    async def set_pane_status(self, container_id: str, session_name: str, window_index: int, status: str) -> None:
+        """Set @pane_status option on a tmux pane."""
+        await self._run_cmd(container_id, [
+            "tmux", "set-option", "-p", "-t", f"{session_name}:{window_index}", "@pane_status", status,
+        ])
 
     async def ensure_session(self, container_id: str, session_name: str) -> None:
         """Create a session if it doesn't already exist."""

@@ -3,9 +3,20 @@
 # Sets pane status to attention and sends notification to TmuxDeck.
 # Receives JSON on stdin with message, title, etc.
 
-tmux set-option -p @pane_status attention 2>/dev/null
-
 INPUT=$(cat)
+
+# Only set "attention" for notifications that need human action.
+# idle_prompt just means Claude finished and is waiting — that's "idle".
+NOTIFICATION_TYPE=$(echo "$INPUT" | jq -r '.notification_type // empty' 2>/dev/null)
+
+case "$NOTIFICATION_TYPE" in
+  permission_prompt|elicitation_dialog)
+    tmux set-option -p @pane_status attention 2>/dev/null
+    ;;
+  *)
+    tmux set-option -p @pane_status idle 2>/dev/null
+    ;;
+esac
 CONTAINER_ID=$(if [ -f /.dockerenv ]; then hostname; else echo host; fi)
 TMUX_SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null)
 TMUX_WINDOW=$(tmux display-message -p '#{window_index}' 2>/dev/null || echo 0)
