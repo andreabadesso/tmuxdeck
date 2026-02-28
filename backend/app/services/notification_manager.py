@@ -74,6 +74,27 @@ class NotificationManager:
         raw_channels = data.get("channels") or []
         channels = [c for c in raw_channels if c in all_channels] or all_channels
 
+        # Dedup: if there's already an active notification for this session/window, reuse it
+        container_id = data.get("container_id", "")
+        tmux_session = data.get("tmux_session", "")
+        tmux_window = data.get("tmux_window", 0)
+
+        for existing in self._notifications.values():
+            if (
+                existing.status in ("pending", "telegram_sent")
+                and existing.container_id == container_id
+                and existing.tmux_session == tmux_session
+                and existing.tmux_window == tmux_window
+            ):
+                # Update message/title in case they changed
+                existing.message = data.get("message", existing.message)
+                existing.title = data.get("title", existing.title)
+                logger.info(
+                    "Duplicate notification suppressed for container=%s session=%s window=%s (existing=%s)",
+                    container_id, tmux_session, tmux_window, existing.id,
+                )
+                return existing
+
         record = NotificationRecord(
             id=str(uuid.uuid4()),
             message=data.get("message", ""),
