@@ -35,6 +35,20 @@ struct TerminalScreen: View {
                             vm.disconnect()
                         }
 
+                    // Scrollback overlay
+                    if vm.showingScrollback {
+                        ScrollbackOverlayView(
+                            historyText: vm.scrollbackText,
+                            theme: vm.theme,
+                            fontSize: vm.fontSize,
+                            onDismiss: {
+                                vm.dismissScrollback()
+                            }
+                        )
+                        .transition(.opacity)
+                        .zIndex(10)
+                    }
+
                     // Floating restore button when fullscreen
                     if isFullscreen {
                         VStack {

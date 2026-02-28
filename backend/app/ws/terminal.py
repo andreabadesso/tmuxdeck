@@ -388,6 +388,19 @@ async def _pty_terminal(
                         except (ValueError, OSError) as e:
                             logger.debug("%s capture-pane failed: %s", label, e)
                         continue
+                    if text.startswith("HISTORY_REQUEST:") and tmux_prefix and session_name and container_id:
+                        try:
+                            tm = TmuxManager.get()
+                            content = await tm.capture_active_pane_history(
+                                container_id, session_name,
+                            )
+                            # Send as binary with a text prefix so the client
+                            # can feed raw ANSI bytes into the terminal buffer.
+                            header = b"HISTORY_DATA:"
+                            await websocket.send_bytes(header + content.encode("utf-8"))
+                        except (ValueError, OSError) as e:
+                            logger.debug("%s history-request failed: %s", label, e)
+                        continue
                     await loop.run_in_executor(
                         None, os.write, master_fd, text.encode("utf-8")
                     )
@@ -790,6 +803,17 @@ async def terminal_ws(
                                 await websocket.send_text(f"PANE_CONTENT:{win_idx}.{pane_idx}:{content}")
                             except (ValueError, Exception) as e:
                                 logger.debug("capture-pane failed: %s", e)
+                            continue
+                        if text.startswith("HISTORY_REQUEST:"):
+                            try:
+                                tm = TmuxManager.get()
+                                content = await tm.capture_active_pane_history(
+                                    container_id, session_name,
+                                )
+                                header = b"HISTORY_DATA:"
+                                await websocket.send_bytes(header + content.encode("utf-8"))
+                            except (ValueError, Exception) as e:
+                                logger.debug("history-request failed: %s", e)
                             continue
                         # Regular text input
                         await loop.run_in_executor(None, raw_sock.sendall, text.encode("utf-8"))

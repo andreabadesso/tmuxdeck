@@ -23,6 +23,13 @@ final class TerminalViewModel {
     /// Set by SwiftTerminalView to feed incoming bytes into the TerminalView
     var feedHandler: (([UInt8]) -> Void)?
 
+    /// Whether the scrollback overlay is showing
+    var showingScrollback = false
+    /// The captured scrollback text
+    var scrollbackText: String = ""
+    /// Whether a history request is in flight
+    private var historyRequested = false
+
     /// Reference to the terminal view for keyboard control
     weak var terminalViewRef: TerminalView?
 
@@ -70,6 +77,9 @@ final class TerminalViewModel {
             },
             onTextMessage: { [weak self] msg in
                 self?.handleControlMessage(msg)
+            },
+            onHistoryData: { [weak self] bytes in
+                self?.handleHistoryData(bytes)
             }
         )
     }
@@ -90,6 +100,27 @@ final class TerminalViewModel {
     func switchWindow(to index: Int) {
         activeWindowIndex = index
         connection.selectWindow(index: index)
+        dismissScrollback()
+    }
+
+    func requestScrollbackHistory() {
+        guard !historyRequested else { return }
+        historyRequested = true
+        connection.requestHistory()
+    }
+
+    func dismissScrollback() {
+        showingScrollback = false
+        scrollbackText = ""
+        historyRequested = false
+    }
+
+    private func handleHistoryData(_ bytes: [UInt8]) {
+        if let text = String(bytes: bytes, encoding: .utf8) {
+            scrollbackText = text
+            showingScrollback = true
+        }
+        historyRequested = false
     }
 
     func toggleMode() {
