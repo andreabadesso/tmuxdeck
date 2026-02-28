@@ -301,10 +301,10 @@ export function SessionItem({
       if (data.windowIndex !== targetIndex) {
         await api.swapWindows(containerId, session.id, data.windowIndex, targetIndex);
         // Keep the selected window selected at its new position
-        if (hasAnyWindowSelected) {
-          if (selectedSession?.windowIndex === data.windowIndex) {
+        if (hasAnyWindowSelected && selectedSession && isWindowSelection(selectedSession)) {
+          if (selectedSession.windowIndex === data.windowIndex) {
             onSelectWindow(targetIndex);
-          } else if (selectedSession?.windowIndex === targetIndex) {
+          } else if (selectedSession.windowIndex === targetIndex) {
             onSelectWindow(data.windowIndex);
           }
         }
@@ -521,7 +521,8 @@ export function SessionItem({
           {session.windows.map((win) => {
             const isSelected =
               hasAnyWindowSelected &&
-              selectedSession?.windowIndex === win.index;
+              selectedSession != null && isWindowSelection(selectedSession) &&
+              selectedSession.windowIndex === win.index;
 
             const isPreviewed =
               hasAnyWindowPreviewed &&
