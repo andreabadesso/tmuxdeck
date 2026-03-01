@@ -64,6 +64,11 @@ class NotificationManager:
     def set_telegram_bot(self, bot: Any) -> None:
         self._telegram_bot = bot
 
+    def _is_telegram_enabled(self) -> bool:
+        from .. import store
+        settings = store.get_settings()
+        return settings.get("telegramNotificationsEnabled", True)
+
     def _get_timeout(self) -> int:
         from .. import store
         settings = store.get_settings()
@@ -114,7 +119,7 @@ class NotificationManager:
 
         # Send Telegram: immediately if web channel is disabled, otherwise
         # delay as a fallback (gives the browser time to dismiss first).
-        if "telegram" in record.channels:
+        if "telegram" in record.channels and self._is_telegram_enabled():
             delay = 0 if "web" not in record.channels else self._get_timeout()
             record._timer_task = asyncio.create_task(
                 self._schedule_telegram(record.id, delay)
@@ -168,6 +173,13 @@ class NotificationManager:
 
     def get_all(self) -> list[NotificationRecord]:
         return list(self._notifications.values())
+
+    def get_by_telegram_message_id(self, message_id: int) -> NotificationRecord | None:
+        """Look up notification by telegram_message_id (pure lookup, no side effects)."""
+        for record in self._notifications.values():
+            if record.telegram_message_id == message_id:
+                return record
+        return None
 
     def handle_telegram_reply(self, message_id: int, text: str) -> NotificationRecord | None:
         """Look up notification by telegram_message_id, route reply to terminal."""

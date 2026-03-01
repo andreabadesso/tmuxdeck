@@ -93,6 +93,11 @@ export function TelegramSettingsPage() {
     onSuccess: invalidateSettings,
   });
 
+  const toggleNotificationsMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updateSettings({ telegramNotificationsEnabled: enabled }),
+    onSuccess: invalidateSettings,
+  });
+
   const toggleAudioDebugMutation = useMutation({
     mutationFn: (enabled: boolean) => api.updateSettings({ audioDebugLog: enabled }),
     onSuccess: invalidateSettings,
@@ -264,6 +269,31 @@ export function TelegramSettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Notifications Enabled */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm text-gray-400">Notifications</label>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Send notifications to connected Telegram users
+                </p>
+              </div>
+              <button
+                onClick={() => toggleNotificationsMutation.mutate(!settings?.telegramNotificationsEnabled)}
+                disabled={toggleNotificationsMutation.isPending}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings?.telegramNotificationsEnabled !== false ? 'bg-blue-600' : 'bg-gray-700'
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                    settings?.telegramNotificationsEnabled !== false ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* Notification Timeout */}

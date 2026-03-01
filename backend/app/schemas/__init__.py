@@ -136,6 +136,7 @@ class SettingsResponse(CamelModel):
     default_volume_mounts: list[str]
     ssh_key_path: str
     telegram_registration_secret: str
+    telegram_notifications_enabled: bool
     telegram_notification_timeout_secs: int
     openai_api_key: str
     chat_model: str
@@ -149,6 +150,7 @@ class UpdateSettingsRequest(CamelModel):
     default_volume_mounts: list[str] | None = None
     ssh_key_path: str | None = None
     telegram_registration_secret: str | None = None
+    telegram_notifications_enabled: bool | None = None
     telegram_notification_timeout_secs: int | None = None
     openai_api_key: str | None = None
     chat_model: str | None = None

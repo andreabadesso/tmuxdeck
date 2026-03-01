@@ -194,6 +194,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "defaultVolumeMounts": [],
     "sshKeyPath": "~/.ssh/id_rsa",
     "telegramRegistrationSecret": "",
+    "telegramNotificationsEnabled": True,
     "telegramNotificationTimeoutSecs": 60,
     "openaiApiKey": "",
     "chatModel": "gpt-4o",

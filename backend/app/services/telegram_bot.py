@@ -1112,6 +1112,19 @@ class TelegramBot:
                     **ctx,
                     "session_id": make_session_id(ctx["container_id"], ctx["session_name"]),
                 }
+            else:
+                # 3. Reply to a notification message
+                from .notification_manager import NotificationManager
+                from .tmux_manager import make_session_id
+
+                record = NotificationManager.get().get_by_telegram_message_id(reply_to_id)
+                if record:
+                    session_ctx = {
+                        "container_id": record.container_id,
+                        "session_name": record.tmux_session,
+                        "window_index": record.tmux_window,
+                        "session_id": make_session_id(record.container_id, record.tmux_session),
+                    }
 
         if not session_ctx:
             await update.message.reply_text(

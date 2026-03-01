@@ -105,6 +105,7 @@ export interface Settings {
   sshKeyPath: string;
   terminalPoolSize?: number;
   telegramRegistrationSecret?: string;
+  telegramNotificationsEnabled?: boolean;
   telegramNotificationTimeoutSecs?: number;
   openaiApiKey?: string;
   chatModel?: string;

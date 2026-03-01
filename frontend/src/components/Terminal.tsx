@@ -195,6 +195,7 @@ function setupWebSocketTerminal(
   onMouseWarning: (enabled: boolean) => void,
   onBellWarning: (warning: BellWarning | null) => void,
   wsRef: { current: WebSocket | null },
+  windowIndexRef: { current: number },
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
@@ -350,6 +351,9 @@ function setupWebSocketTerminal(
         if (hasConnectedOnce) {
           term.clear();
           term.writeln('\x1b[1;32m[Reconnected]\x1b[0m');
+          // Re-sync tmux to the current window (the attach URL uses the
+          // original windowIndex, which may differ after user navigation).
+          openWs.send(`SELECT_WINDOW:${windowIndexRef.current}`);
         }
         hasConnectedOnce = true;
         reconnectAttempt = 0;
@@ -578,7 +582,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef);
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef);
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;
