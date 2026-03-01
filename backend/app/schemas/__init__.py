@@ -211,3 +211,18 @@ class BridgeConfigResponse(CamelModel):
     connected: bool = False
     enabled: bool = True
     created_at: str
+
+
+# --- Ordering ---
+
+
+class ContainerOrderRequest(CamelModel):
+    order: list[str]
+
+
+class SessionOrderRequest(CamelModel):
+    order: list[str]
+
+
+class OrderResponse(CamelModel):
+    order: list[str]

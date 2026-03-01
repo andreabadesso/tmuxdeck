@@ -54,6 +54,12 @@ export interface ApiClient {
   createBridge(name: string): Promise<BridgeConfig>;
   deleteBridge(id: string): Promise<void>;
 
+  // Ordering
+  getContainerOrder(): Promise<string[]>;
+  saveContainerOrder(order: string[]): Promise<void>;
+  getSessionOrder(containerId: string): Promise<string[]>;
+  saveSessionOrder(containerId: string, order: string[]): Promise<void>;
+
   // Debug log
   getDebugLog(): Promise<{ entries: DebugLogEntry[] }>;
   clearDebugLog(): Promise<void>;

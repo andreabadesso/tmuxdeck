@@ -269,13 +269,28 @@ class TmuxManager:
             container_id,
             ["tmux", "set-option", "-g", "activity-action", "none"],
         )
+        # 1-based window indexing
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-g", "base-index", "1"],
+        )
+        # Auto-renumber windows when one is closed
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-g", "renumber-windows", "on"],
+        )
+        # 1-based pane indexing (consistent)
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-g", "pane-base-index", "1"],
+        )
         # Return the new session info
         return {
             "id": make_session_id(container_id, session_name),
             "name": session_name,
             "windows": [
                 {
-                    "index": 0, "name": "bash", "active": True,
+                    "index": 1, "name": "bash", "active": True,
                     "panes": 1, "bell": False, "activity": False,
                     "command": "bash", "pane_status": "",
                 },
@@ -514,6 +529,19 @@ class TmuxManager:
                 await self._run_cmd(
                     container_id,
                     ["tmux", "set-option", "-g", "activity-action", "none"],
+                )
+                # 1-based window/pane indexing with auto-renumber
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-g", "base-index", "1"],
+                )
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-g", "renumber-windows", "on"],
+                )
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-g", "pane-base-index", "1"],
                 )
                 return
         await self.create_session(container_id, session_name)

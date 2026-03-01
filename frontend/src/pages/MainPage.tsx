@@ -399,7 +399,7 @@ export function MainPage() {
             const container = containers.find((c) => c.id === selectedSession.containerId);
             if (container) {
               setContainerExpanded(selectedSession.containerId, true);
-              const ordered = sortSessionsByOrder(container.sessions, container.id);
+              const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
               if (ordered.length > 0) {
                 const firstSession = ordered[0];
                 if (!isSessionExpanded(container.id, firstSession.id)) {
@@ -464,7 +464,7 @@ export function MainPage() {
             const container = containers.find((c) => c.id === selectedSession.containerId);
             if (container) {
               setContainerExpanded(selectedSession.containerId, true);
-              const ordered = sortSessionsByOrder(container.sessions, container.id);
+              const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
               if (ordered.length > 0) {
                 const firstSession = ordered[0];
                 if (!isSessionExpanded(container.id, firstSession.id)) {
@@ -512,7 +512,7 @@ export function MainPage() {
               allItems.push({ containerId: c.id, containerFolded: true });
               continue;
             }
-            const ordered = sortSessionsByOrder(c.sessions, c.id);
+            const ordered = sortSessionsByOrder(c.sessions, queryClient.getQueryData<string[]>(['sessionOrder', c.id]) ?? []);
             for (const s of ordered) {
               if (!isSessionExpanded(c.id, s.id)) {
                 allItems.push({ containerId: c.id, sessionName: s.name, sessionId: s.id, folded: true });
@@ -641,7 +641,7 @@ export function MainPage() {
                   const container = containers?.find((c) => c.id === sel.containerId);
                   if (container) {
                     setContainerExpanded(sel.containerId, true);
-                    const ordered = sortSessionsByOrder(container.sessions, container.id);
+                    const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
                     const session = ordered[sessionIdx];
                     if (session) {
                       if (!isSessionExpanded(container.id, session.id)) {

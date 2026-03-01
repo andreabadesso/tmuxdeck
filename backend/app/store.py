@@ -339,3 +339,43 @@ def delete_bridge_config(bridge_id: str) -> bool:
         return False
     _save_bridges(new_bridges)
     return True
+
+
+# --- Ordering ----------------------------------------------------------------
+
+
+def ordering_path() -> Path:
+    return config.data_path / "ordering.json"
+
+
+def _load_ordering() -> dict[str, Any]:
+    p = ordering_path()
+    if not p.exists():
+        return {"containerOrder": [], "sessionOrders": {}}
+    return _read_json(p)
+
+
+def _save_ordering(data: dict[str, Any]) -> None:
+    _write_json(ordering_path(), data)
+
+
+def get_container_order() -> list[str]:
+    return _load_ordering().get("containerOrder", [])
+
+
+def save_container_order(order: list[str]) -> None:
+    data = _load_ordering()
+    data["containerOrder"] = order
+    _save_ordering(data)
+
+
+def get_session_order(container_id: str) -> list[str]:
+    return _load_ordering().get("sessionOrders", {}).get(container_id, [])
+
+
+def save_session_order(container_id: str, order: list[str]) -> None:
+    data = _load_ordering()
+    if "sessionOrders" not in data:
+        data["sessionOrders"] = {}
+    data["sessionOrders"][container_id] = order
+    _save_ordering(data)

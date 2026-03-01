@@ -65,7 +65,8 @@ export function FoldedContainerPreview({ selection, onUnfoldAndSelect }: FoldedC
 
   const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
   const container = containers?.find((c) => c.id === selection.containerId);
-  const sessions = container ? sortSessionsByOrder(container.sessions, container.id) : [];
+  const sessionOrderData = queryClient.getQueryData<string[]>(['sessionOrder', selection.containerId]) ?? [];
+  const sessions = container ? sortSessionsByOrder(container.sessions, sessionOrderData) : [];
 
   const handleSelect = useCallback((idx: number) => {
     if (sessions[idx]) {

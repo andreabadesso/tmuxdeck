@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -12,8 +12,10 @@ import {
 import { api } from '../api/client';
 import { ContainerNode } from './ContainerNode';
 import { NewContainerDialog } from './NewContainerDialog';
-import type { SessionTarget, Selection } from '../types';
+import type { Container, SessionTarget, Selection } from '../types';
 import { getSidebarCollapsed, saveSidebarCollapsed, getSectionsCollapsed, saveSectionsCollapsed } from '../utils/sidebarState';
+
+const CONTAINER_DRAG_MIME = 'application/x-container-order';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -54,11 +56,51 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
     refetchInterval: 3000,
   });
 
+  const { data: containerOrder = [] } = useQuery({
+    queryKey: ['containerOrder'],
+    queryFn: () => api.getContainerOrder(),
+    staleTime: 30_000,
+  });
+
   const { containers = [], dockerError } = data ?? {};
 
-  const special = containers.filter((c) => c.containerType === 'host' || c.containerType === 'local' || c.containerType === 'bridge');
-  const running = containers.filter((c) => c.status === 'running' && !special.includes(c));
-  const stopped = containers.filter((c) => c.status !== 'running' && !special.includes(c));
+  // Apply saved order, falling back to default grouping: special → running → stopped
+  const orderedContainers = useMemo(() => {
+    if (containerOrder.length === 0) {
+      const special = containers.filter((c) => c.containerType === 'host' || c.containerType === 'local' || c.containerType === 'bridge');
+      const running = containers.filter((c) => c.status === 'running' && !special.includes(c));
+      const stopped = containers.filter((c) => c.status !== 'running' && !special.includes(c));
+      return [...special, ...running, ...stopped];
+    }
+    const orderMap = new Map(containerOrder.map((id, idx) => [id, idx]));
+    return [...containers].sort((a, b) => {
+      const ia = orderMap.get(a.id) ?? Infinity;
+      const ib = orderMap.get(b.id) ?? Infinity;
+      if (ia === Infinity && ib === Infinity) {
+        // Fallback: special first, then running, then stopped
+        const rank = (c: Container) => {
+          if (c.containerType === 'local' || c.containerType === 'host' || c.containerType === 'bridge') return 0;
+          if (c.status === 'running') return 1;
+          return 2;
+        };
+        return rank(a) - rank(b);
+      }
+      return ia - ib;
+    });
+  }, [containers, containerOrder]);
+
+  const [dragOverContainerId, setDragOverContainerId] = useState<string | null>(null);
+
+  const handleContainerReorder = useCallback((fromId: string, toId: string) => {
+    const currentIds = orderedContainers.map((c) => c.id);
+    const fromIdx = currentIds.indexOf(fromId);
+    const toIdx = currentIds.indexOf(toId);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+    const newOrder = [...currentIds];
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, fromId);
+    api.saveContainerOrder(newOrder);
+  }, [orderedContainers]);
 
   if (collapsed) {
     return (
@@ -141,71 +183,54 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               </p>
             </div>
           )}
-          {special.map((container) => {
+          {orderedContainers.map((container) => {
+            const isSpecial = container.containerType === 'host' || container.containerType === 'local' || container.containerType === 'bridge';
             const sectionKey = container.containerType === 'bridge' ? container.id : (container.containerType ?? 'special');
             return (
-              <ContainerNode
+              <div
                 key={container.id}
-                container={container}
-                selectedSession={selectedSession}
-                previewSession={previewSession}
-                onSelectSession={handleSelectSession}
-                onPreviewSession={isMainPage ? onPreviewSession : undefined}
-                onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
-                onRefresh={refetch}
-                digitByTargetKey={digitByTargetKey}
-                assignDigit={assignDigit}
-                isSessionExpanded={isSessionExpanded}
-                setSessionExpanded={setSessionExpanded}
-                isContainerExpanded={isContainerExpanded}
-                setContainerExpanded={setContainerExpanded}
-                sectionCollapsed={sectionsCollapsed[sectionKey]}
-                onToggleSection={() => setSectionsCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
-              />
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(CONTAINER_DRAG_MIME, container.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes(CONTAINER_DRAG_MIME)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDragOverContainerId(container.id);
+                }}
+                onDragLeave={() => setDragOverContainerId(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverContainerId(null);
+                  const fromId = e.dataTransfer.getData(CONTAINER_DRAG_MIME);
+                  if (fromId && fromId !== container.id) {
+                    handleContainerReorder(fromId, container.id);
+                  }
+                }}
+                className={dragOverContainerId === container.id ? 'border-t-2 border-blue-500' : 'border-t-2 border-transparent'}
+              >
+                <ContainerNode
+                  container={container}
+                  selectedSession={selectedSession}
+                  previewSession={previewSession}
+                  onSelectSession={handleSelectSession}
+                  onPreviewSession={isMainPage ? onPreviewSession : undefined}
+                  onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
+                  onRefresh={refetch}
+                  digitByTargetKey={digitByTargetKey}
+                  assignDigit={assignDigit}
+                  isSessionExpanded={isSessionExpanded}
+                  setSessionExpanded={setSessionExpanded}
+                  isContainerExpanded={isContainerExpanded}
+                  setContainerExpanded={setContainerExpanded}
+                  sectionCollapsed={isSpecial ? sectionsCollapsed[sectionKey] : undefined}
+                  onToggleSection={isSpecial ? () => setSectionsCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] })) : undefined}
+                />
+              </div>
             );
           })}
-          {special.length > 0 && (running.length > 0 || stopped.length > 0) && (
-            <div className="border-t border-gray-800 my-2" />
-          )}
-          {running.map((container) => (
-            <ContainerNode
-              key={container.id}
-              container={container}
-              selectedSession={selectedSession}
-              previewSession={previewSession}
-              onSelectSession={handleSelectSession}
-              onPreviewSession={isMainPage ? onPreviewSession : undefined}
-              onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
-              onRefresh={refetch}
-              digitByTargetKey={digitByTargetKey}
-              assignDigit={assignDigit}
-              isSessionExpanded={isSessionExpanded}
-              setSessionExpanded={setSessionExpanded}
-              isContainerExpanded={isContainerExpanded}
-              setContainerExpanded={setContainerExpanded}
-            />
-          ))}
-          {stopped.length > 0 && running.length > 0 && (
-            <div className="border-t border-gray-800 my-2" />
-          )}
-          {stopped.map((container) => (
-            <ContainerNode
-              key={container.id}
-              container={container}
-              selectedSession={selectedSession}
-              previewSession={previewSession}
-              onSelectSession={handleSelectSession}
-              onPreviewSession={isMainPage ? onPreviewSession : undefined}
-              onPreviewEnd={isMainPage ? onPreviewEnd : undefined}
-              onRefresh={refetch}
-              digitByTargetKey={digitByTargetKey}
-              assignDigit={assignDigit}
-              isSessionExpanded={isSessionExpanded}
-              setSessionExpanded={setSessionExpanded}
-              isContainerExpanded={isContainerExpanded}
-              setContainerExpanded={setContainerExpanded}
-            />
-          ))}
           {containers.length === 0 && (
             <div className="px-4 py-8 text-center text-gray-500 text-sm">
               No containers yet.

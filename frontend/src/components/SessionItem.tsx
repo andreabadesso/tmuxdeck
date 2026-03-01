@@ -500,7 +500,7 @@ export function SessionItem({
       {/* Window rows */}
       {expanded && (
         <div className="ml-4">
-          {session.windows.map((win, position) => {
+          {session.windows.map((win) => {
             const isSelected =
               hasAnyWindowSelected &&
               selectedSession?.windowIndex === win.index;
@@ -561,7 +561,7 @@ export function SessionItem({
                   );
                 })()}
                 <span className="text-xs truncate flex-1">
-                  {position + 1}: {win.name}
+                  {win.index}: {win.name}
                 </span>
                 <span className="shrink-0 w-[38px] text-[10px] text-right">
                   {isPreviewed

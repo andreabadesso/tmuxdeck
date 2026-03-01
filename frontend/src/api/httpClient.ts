@@ -250,6 +250,19 @@ export const httpApi: ApiClient = {
   deleteBridge: (id: string) =>
     request<void>(`/bridges/${id}`, { method: 'DELETE' }),
 
+  // Ordering
+  getContainerOrder: () =>
+    request<{ order: string[] }>('/ordering/containers').then((r) => r.order),
+  saveContainerOrder: (order: string[]) =>
+    request<void>('/ordering/containers', { method: 'PUT', body: JSON.stringify({ order }) }),
+  getSessionOrder: (containerId: string) =>
+    request<{ order: string[] }>(`/ordering/containers/${containerId}/sessions`).then((r) => r.order),
+  saveSessionOrder: (containerId: string, order: string[]) =>
+    request<void>(`/ordering/containers/${containerId}/sessions`, {
+      method: 'PUT',
+      body: JSON.stringify({ order }),
+    }),
+
   // Debug log
   getDebugLog: () => request<{ entries: DebugLogEntry[] }>('/debug-log'),
   clearDebugLog: () => request<void>('/debug-log', { method: 'DELETE' }),

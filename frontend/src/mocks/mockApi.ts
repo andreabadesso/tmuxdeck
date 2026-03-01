@@ -259,6 +259,10 @@ export const mockApi: ApiClient = {
   async listBridges() { return []; },
   async createBridge(_name: string) { throw new Error('Not implemented in mock'); },
   async deleteBridge(_id: string) {},
+  async getContainerOrder() { return []; },
+  async saveContainerOrder(_order: string[]) {},
+  async getSessionOrder(_containerId: string) { return []; },
+  async saveSessionOrder(_containerId: string, _order: string[]) {},
   async getDebugLog() { return { entries: [] }; },
   async clearDebugLog() {},
 };

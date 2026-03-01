@@ -10,6 +10,7 @@ import {
   Trash2,
   Pencil,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import type { Container, SessionTarget, Selection } from '../types';
 import { isFoldedContainerSelection } from '../types';
 import { DockerIcon } from './icons/DockerIcon';
@@ -17,7 +18,6 @@ import { api } from '../api/client';
 import { SessionItem } from './SessionItem';
 import { ConfirmDialog } from './ConfirmDialog';
 import { debugLog } from '../utils/debugLog';
-import { getSessionOrder, saveSessionOrder } from '../utils/sessionOrder';
 import { getContainerExpanded, saveContainerExpanded } from '../utils/sidebarState';
 
 interface ContainerNodeProps {
@@ -76,7 +76,11 @@ export function ContainerNode({
   const [renameValue, setRenameValue] = useState(container.displayName);
   const [newSessionName, setNewSessionName] = useState('');
   const [addingSession, setAddingSession] = useState(false);
-  const [sessionOrder, setSessionOrder] = useState<string[]>(() => getSessionOrder(container.id));
+  const { data: sessionOrder = [] } = useQuery({
+    queryKey: ['sessionOrder', container.id],
+    queryFn: () => api.getSessionOrder(container.id),
+    staleTime: 30_000,
+  });
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
@@ -120,8 +124,7 @@ export function ContainerNode({
     const newOrder = [...currentIds];
     newOrder.splice(fromIdx, 1);
     newOrder.splice(toIdx, 0, fromId);
-    setSessionOrder(newOrder);
-    saveSessionOrder(container.id, newOrder);
+    api.saveSessionOrder(container.id, newOrder);
   }, [orderedSessions, container.id]);
 
   const handleRename = async () => {
