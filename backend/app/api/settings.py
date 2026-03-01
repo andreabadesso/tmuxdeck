@@ -19,6 +19,9 @@ def _to_response(data: dict) -> SettingsResponse:
         ssh_key_path=data.get("sshKeyPath", "~/.ssh/id_rsa"),
         telegram_registration_secret=data.get("telegramRegistrationSecret", ""),
         telegram_notification_timeout_secs=data.get("telegramNotificationTimeoutSecs", 60),
+        openai_api_key=data.get("openaiApiKey", ""),
+        chat_model=data.get("chatModel", "gpt-4o"),
+        audio_debug_log=data.get("audioDebugLog", False),
         hotkeys={**_DEFAULT_HOTKEYS, **data.get("hotkeys", {})},
     )
 
@@ -43,6 +46,12 @@ async def update_settings(req: UpdateSettingsRequest):
         updates["telegramRegistrationSecret"] = req.telegram_registration_secret
     if req.telegram_notification_timeout_secs is not None:
         updates["telegramNotificationTimeoutSecs"] = req.telegram_notification_timeout_secs
+    if req.openai_api_key is not None:
+        updates["openaiApiKey"] = req.openai_api_key
+    if req.chat_model is not None:
+        updates["chatModel"] = req.chat_model
+    if req.audio_debug_log is not None:
+        updates["audioDebugLog"] = req.audio_debug_log
     if req.hotkeys is not None:
         updates["hotkeys"] = req.hotkeys
 

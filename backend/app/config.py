@@ -20,6 +20,12 @@ class AppConfig(BaseSettings):
     login_backoff_base_seconds: int = 2
     login_lockout_threshold_seconds: int = 60
 
+    # OpenAI (voice agent)
+    openai_api_key: str = ""
+    chat_agent_model: str = "gpt-4o"
+    tts_model: str = "tts-1"
+    tts_voice: str = "alloy"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     @property

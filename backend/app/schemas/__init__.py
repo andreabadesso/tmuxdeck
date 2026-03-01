@@ -137,6 +137,9 @@ class SettingsResponse(CamelModel):
     ssh_key_path: str
     telegram_registration_secret: str
     telegram_notification_timeout_secs: int
+    openai_api_key: str
+    chat_model: str
+    audio_debug_log: bool
     hotkeys: dict[str, str]
 
 
@@ -147,6 +150,9 @@ class UpdateSettingsRequest(CamelModel):
     ssh_key_path: str | None = None
     telegram_registration_secret: str | None = None
     telegram_notification_timeout_secs: int | None = None
+    openai_api_key: str | None = None
+    chat_model: str | None = None
+    audio_debug_log: bool | None = None
     hotkeys: dict[str, str] | None = None
 
 

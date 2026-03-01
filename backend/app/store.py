@@ -195,6 +195,9 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "sshKeyPath": "~/.ssh/id_rsa",
     "telegramRegistrationSecret": "",
     "telegramNotificationTimeoutSecs": 60,
+    "openaiApiKey": "",
+    "chatModel": "gpt-4o",
+    "audioDebugLog": False,
     "hotkeys": dict(_DEFAULT_HOTKEYS),
 }
 

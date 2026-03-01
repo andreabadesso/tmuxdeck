@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
+import re
 from datetime import UTC, datetime
 
 from ..config import config
@@ -32,9 +32,16 @@ def _is_special(container_id: str) -> bool:
     return _is_host(container_id) or _is_local(container_id) or _is_bridge(container_id)
 
 
+def sanitize_source(container_id: str) -> str:
+    """Replace non-alphanumeric chars (except -) with -."""
+    s = re.sub(r'[^a-zA-Z0-9-]', '-', container_id)
+    s = re.sub(r'-{2,}', '-', s)
+    return s.strip('-')
+
+
 def make_session_id(container_id: str, session_name: str) -> str:
-    """Deterministic session ID: md5(container_id:session_name)[:12]."""
-    return hashlib.md5(f"{container_id}:{session_name}".encode()).hexdigest()[:12]
+    """Human-readable session ID: sanitized_source:session_name."""
+    return f"{sanitize_source(container_id)}:{session_name}"
 
 
 class TmuxManager:
@@ -292,26 +299,31 @@ class TmuxManager:
         )
 
     async def resolve_session_id(self, container_id: str, session_id: str) -> str | None:
-        """Resolve a session ID (md5 hash) to the actual tmux session name.
+        """Resolve a session ID to the actual tmux session name.
 
         Returns None if no match found.
         """
-        sessions = await self.list_sessions(container_id)
-        for s in sessions:
-            if s["id"] == session_id:
-                return s["name"]
-        return None
+        if ":" in session_id:
+            _, session_name = session_id.split(":", 1)
+            return session_name
+        # Fallback: treat as literal session name
+        return session_id
 
     async def capture_pane(
-        self, container_id: str, session_name: str, window_index: int = 0, ansi: bool = False
+        self, container_id: str, session_name: str, window_index: int = 0,
+        ansi: bool = False, max_lines: int | None = None,
     ) -> str:
         """Capture the content of a tmux pane.
 
         When ansi=True, includes ANSI escape sequences (colors, bold).
+        When max_lines is set, captures scrollback history (up to that many lines).
         """
         cmd = ["tmux", "capture-pane", "-p", "-t", f"{session_name}:{window_index}"]
         if ansi:
             cmd.insert(3, "-e")  # insert -e before -t
+        if max_lines is not None:
+            cmd.insert(3, f"-{max_lines}")
+            cmd.insert(3, "-S")
         return await self._run_cmd(container_id, cmd)
 
     async def get_pane_width(
@@ -331,19 +343,19 @@ class TmuxManager:
         window_index: int,
         text: str,
         enter: bool = True,
-        submit: bool = False,
     ) -> None:
         """Send keys to a tmux pane.
 
-        enter: append a single Enter keypress.
-        submit: append two Enter keypresses (submits in Claude Code).
+        enter: append a single Enter keypress in a separate send-keys call.
         """
-        cmd = ["tmux", "send-keys", "-t", f"{session_name}:{window_index}", text]
-        if submit:
-            cmd += ["Enter", "Enter"]
-        elif enter:
-            cmd.append("Enter")
-        await self._run_cmd(container_id, cmd)
+        target = f"{session_name}:{window_index}"
+        await self._run_cmd(container_id, [
+            "tmux", "send-keys", "-t", target, text,
+        ])
+        if enter:
+            await self._run_cmd(container_id, [
+                "tmux", "send-keys", "-t", target, "Enter",
+            ])
 
     async def resolve_session_id_global(self, session_id: str) -> tuple[str, str] | None:
         """Resolve a session ID across all containers.
@@ -352,6 +364,17 @@ class TmuxManager:
         """
         from ..api.containers import list_containers
 
+        if ":" in session_id:
+            source, session_name = session_id.split(":", 1)
+            resp = await list_containers()
+            for container in resp.containers:
+                if sanitize_source(container.id) == source:
+                    for session in container.sessions:
+                        if session.name == session_name:
+                            return (container.id, session_name)
+            return None
+
+        # Fallback: old hash format — iterate all
         resp = await list_containers()
         for container in resp.containers:
             for session in container.sessions:

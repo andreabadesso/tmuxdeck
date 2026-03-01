@@ -106,6 +106,9 @@ export interface Settings {
   terminalPoolSize?: number;
   telegramRegistrationSecret?: string;
   telegramNotificationTimeoutSecs?: number;
+  openaiApiKey?: string;
+  chatModel?: string;
+  audioDebugLog?: boolean;
   hotkeys?: Record<string, string>;
 }
 

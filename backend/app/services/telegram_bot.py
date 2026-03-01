@@ -1,4 +1,4 @@
-"""Telegram bot service for notification forwarding, session browsing, and talk mode."""
+"""Telegram bot: notification forwarding, session browsing, talk mode, and AI chat mode."""
 
 from __future__ import annotations
 
@@ -90,12 +90,22 @@ def _aggregate_status(windows: list) -> str:
     return "idle"
 
 
+def _parse_session_arg(arg: str) -> tuple[str, int]:
+    """Parse a session argument like 'abc123' or 'abc123:2' into (session_id, window_index)."""
+    if ":" in arg:
+        parts = arg.rsplit(":", 1)
+        if parts[1].isdigit():
+            return parts[0], int(parts[1])
+    return arg, 0
+
+
 class TelegramBot:
     def __init__(self, token: str) -> None:
         self._token = token
         self._app: Application | None = None
         self._notification_manager: object | None = None
         self._talk_mode: dict[int, dict] = {}  # chat_id → talk state
+        self._chat_mode: dict[int, dict] = {}  # chat_id → chat mode state (AI agent)
         # Map (chat_id, message_id) → session context for reply-to-screenshot/capture
         self._message_sessions: dict[tuple[int, int], dict] = {}
 
@@ -114,9 +124,14 @@ class TelegramBot:
         self._app.add_handler(CommandHandler("screenshot", self._handle_screenshot))
         self._app.add_handler(CommandHandler("capture", self._handle_capture))
         self._app.add_handler(CommandHandler("talk", self._handle_talk))
+        self._app.add_handler(CommandHandler("send", self._handle_talk))
+        self._app.add_handler(CommandHandler("chat", self._handle_chat))
         self._app.add_handler(CommandHandler("cancel", self._handle_cancel))
         self._app.add_handler(CommandHandler("unlock", self._handle_unlock))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
+        self._app.add_handler(
+            MessageHandler(filters.VOICE | filters.AUDIO, self._handle_voice)
+        )
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
@@ -133,8 +148,9 @@ class TelegramBot:
                 BotCommand("list", "Browse tmux sessions"),
                 BotCommand("screenshot", "Screenshot a session pane"),
                 BotCommand("capture", "Capture pane as text"),
-                BotCommand("talk", "Send messages to a session"),
-                BotCommand("cancel", "Exit talk mode"),
+                BotCommand("send", "Send keys to a session window"),
+                BotCommand("chat", "AI chat mode for a session"),
+                BotCommand("cancel", "Exit send/chat mode"),
                 BotCommand("unlock", "Unlock login after lockout"),
             ])
             logger.info("Registered bot commands menu")
@@ -153,6 +169,13 @@ class TelegramBot:
                 if timer and not timer.done():
                     timer.cancel()
             self._talk_mode.clear()
+
+            # Cancel all chat mode timers
+            for state in self._chat_mode.values():
+                timer = state.get("timer_task")
+                if timer and not timer.done():
+                    timer.cancel()
+            self._chat_mode.clear()
 
             await self._app.updater.stop()
             await self._app.stop()
@@ -385,36 +408,156 @@ class TelegramBot:
             wname = _escape_md2(w.name)
             wcmd = _escape_md2(w.command)
             lines.append(
-                f"  {emoji} Window {w.index}: `{wname}` \\({wcmd}\\)"
+                f"  {emoji} W{w.index}: `{wname}` \\({wcmd}\\)"
             )
+
+        lines.append("")
+        lines.append("_Tap a window for actions_")
 
         text = "\n".join(lines)
 
-        # Action buttons
+        # Window buttons — each navigates to window detail
         buttons: list[list[InlineKeyboardButton]] = []
-        if len(target_session.windows) > 1:
-            # Per-window action rows
-            for w in target_session.windows:
-                buttons.append([
-                    InlineKeyboardButton(
-                        f"\U0001f4f7 W{w.index}", callback_data=f"sw:{session_id}:{w.index}"
-                    ),
-                    InlineKeyboardButton(
-                        f"\U0001f4cb W{w.index}", callback_data=f"cw:{session_id}:{w.index}"
-                    ),
-                    InlineKeyboardButton(
-                        f"\U0001f4ac W{w.index}", callback_data=f"tw:{session_id}:{w.index}"
-                    ),
-                ])
-        # Main action row (uses window 0 by default)
-        buttons.append([
-            InlineKeyboardButton("\U0001f4f7 Screenshot", callback_data=f"s:{session_id}"),
-            InlineKeyboardButton("\U0001f4cb Capture", callback_data=f"c:{session_id}"),
-            InlineKeyboardButton("\U0001f4ac Talk", callback_data=f"t:{session_id}"),
-        ])
+        for w in target_session.windows:
+            ps = w.pane_status or "idle"
+            emoji = _STATUS_EMOJI.get(ps, "\u26aa")
+            label = f"{emoji} W{w.index}: {w.name}"
+            buttons.append([
+                InlineKeyboardButton(
+                    label, callback_data=f"w:{session_id}:{w.index}"
+                ),
+            ])
+
         buttons.append([
             InlineKeyboardButton("\u2b05 Back", callback_data="back"),
         ])
+
+        markup = InlineKeyboardMarkup(buttons)
+
+        if message_id and self._app:
+            try:
+                await self._app.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=markup,
+                )
+                return
+            except Exception:
+                pass
+
+        if self._app:
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=markup,
+            )
+
+    # ── Window detail (callback) ────────────────────────────
+
+    async def _send_window_detail(
+        self,
+        chat_id: int,
+        session_id: str,
+        window_index: int,
+        message_id: int | None = None,
+    ) -> None:
+        """Show window action menu with screenshot, capture, chat, send, copy ID."""
+        from ..api.containers import list_containers
+
+        resp = await list_containers()
+        target_container = None
+        target_session = None
+        target_window = None
+        for container in resp.containers:
+            for session in container.sessions:
+                if session.id == session_id:
+                    target_container = container
+                    target_session = session
+                    for w in session.windows:
+                        if w.index == window_index:
+                            target_window = w
+                            break
+                    break
+            if target_session:
+                break
+
+        if not target_session or not target_container or not target_window:
+            text = "\u26a0\ufe0f Window not found\\."
+            if message_id and self._app:
+                try:
+                    await self._app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=text,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton(
+                                "\u2b05 Back", callback_data=f"d:{session_id}"
+                            )]
+                        ]),
+                    )
+                    return
+                except Exception:
+                    pass
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+            return
+
+        cname = _escape_md2(target_container.display_name)
+        sname = _escape_md2(target_session.name)
+        wname = _escape_md2(target_window.name)
+        wcmd = _escape_md2(target_window.command)
+        ps = target_window.pane_status or "idle"
+        emoji = _STATUS_EMOJI.get(ps, "\u26aa")
+        wid = f"{session_id}:{window_index}"
+        wid_escaped = _escape_md2(wid)
+
+        text = (
+            f"{emoji} *{cname}/{sname}* — W{window_index}: `{wname}`\n"
+            f"Command: {wcmd}\n"
+            f"ID: `{wid_escaped}`"
+        )
+
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    "\U0001f4f7 Screenshot",
+                    callback_data=f"sw:{session_id}:{window_index}",
+                ),
+                InlineKeyboardButton(
+                    "\U0001f4cb Capture",
+                    callback_data=f"cw:{session_id}:{window_index}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "\U0001f916 Chat",
+                    callback_data=f"aw:{session_id}:{window_index}",
+                ),
+                InlineKeyboardButton(
+                    "\U0001f4ac Send",
+                    callback_data=f"tw:{session_id}:{window_index}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "\U0001f4cb Copy ID",
+                    callback_data=f"copyid:{wid}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "\u2b05 Back", callback_data=f"d:{session_id}"
+                ),
+            ],
+        ]
 
         markup = InlineKeyboardMarkup(buttons)
 
@@ -456,13 +599,14 @@ class TelegramBot:
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "Usage: /screenshot <session\\-id>\n"
+                "Usage: /screenshot <session\\-id\\[:window\\]>\n"
                 "Use /list to find session IDs\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        await self._do_screenshot(chat_id, args[0], window_index=0)
+        session_id, window_index = _parse_session_arg(args[0])
+        await self._do_screenshot(chat_id, session_id, window_index=window_index)
 
     async def _do_screenshot(
         self, chat_id: int, session_id: str, window_index: int = 0
@@ -549,13 +693,14 @@ class TelegramBot:
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "Usage: /capture <session\\-id>\n"
+                "Usage: /capture <session\\-id\\[:window\\]>\n"
                 "Use /list to find session IDs\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        await self._do_capture(chat_id, args[0], window_index=0)
+        session_id, window_index = _parse_session_arg(args[0])
+        await self._do_capture(chat_id, session_id, window_index=window_index)
 
     async def _do_capture(
         self, chat_id: int, session_id: str, window_index: int = 0
@@ -652,15 +797,15 @@ class TelegramBot:
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "Usage: /talk <session\\-id> \\[message\\]\n"
+                "Usage: /send <session\\-id\\[:window\\]> \\[message\\]\n"
                 "Use /list to find session IDs\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        session_id = args[0]
+        session_id, window_index = _parse_session_arg(args[0])
         message = " ".join(args[1:]) if len(args) > 1 else None
-        await self._do_talk(chat_id, session_id, window_index=0, message=message)
+        await self._do_talk(chat_id, session_id, window_index=window_index, message=message)
 
     async def _do_talk(
         self,
@@ -709,7 +854,7 @@ class TelegramBot:
                 await self._app.bot.send_message(
                     chat_id=chat_id,
                     text=(
-                        f"\U0001f4ac Talk mode: *{sn}*"
+                        f"\U0001f4ac Send mode: *{sn}*"
                         f" window {window_index}\n\n"
                         f"Messages you send will go to"
                         f" this session\\.\n"
@@ -770,10 +915,418 @@ class TelegramBot:
             try:
                 await self._app.bot.send_message(
                     chat_id=chat_id,
-                    text="\U0001f4ac Talk mode exited (idle timeout).",
+                    text="\U0001f4ac Send mode exited (idle timeout).",
                 )
             except Exception:
                 logger.exception("Failed to send idle timeout message")
+
+    # ── /chat [session-uid] ─────────────────────────────────
+
+    async def _handle_chat(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        if not update.message or not update.effective_chat:
+            return
+        chat_id = update.effective_chat.id
+        if not self._is_registered(chat_id):
+            await update.message.reply_text(
+                "\u26a0\ufe0f This chat is not registered. Use /start <secret> first."
+            )
+            return
+
+        from ..config import config as app_config
+
+        settings = store.get_settings()
+        if not (settings.get("openaiApiKey") or app_config.openai_api_key):
+            await update.message.reply_text(
+                "\u26a0\ufe0f OpenAI API key is not configured. "
+                "Set it in Settings \u2192 Telegram."
+            )
+            return
+
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "Usage: /chat <session\\-id\\[:window\\]>\n"
+                "Use /list to find session IDs\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        session_id, window_index = _parse_session_arg(args[0])
+        await self._do_chat(chat_id, session_id, window_index=window_index)
+
+    async def _do_chat(
+        self,
+        chat_id: int,
+        session_id: str,
+        window_index: int = 0,
+    ) -> None:
+        """Enter AI chat mode for a session."""
+        from ..services.tmux_manager import TmuxManager
+
+        tm = TmuxManager.get()
+        resolved = await tm.resolve_session_id_global(session_id)
+        if not resolved:
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text="\u26a0\ufe0f Session not found.",
+                )
+            return
+
+        container_id, session_name = resolved
+
+        # Exit talk mode if active
+        self._exit_talk_mode(chat_id)
+
+        # Enter chat mode
+        self._enter_chat_mode(
+            chat_id, session_id, container_id, session_name, window_index
+        )
+        if self._app:
+            sn = _escape_md2(session_name)
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"\U0001f916 Chat mode: *{sn}*"
+                    f" window {window_index}\n\n"
+                    f"Send text or voice messages\\.\n"
+                    f"The AI agent will read the terminal and respond\\.\n"
+                    f"Use /cancel to exit\\.\n"
+                    f"Auto\\-exits after 5 min idle\\."
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+
+    def _enter_chat_mode(
+        self,
+        chat_id: int,
+        session_id: str,
+        container_id: str,
+        session_name: str,
+        window_index: int,
+    ) -> None:
+        """Set up chat mode state with idle timer."""
+        self._exit_chat_mode(chat_id)
+
+        timer = asyncio.create_task(self._chat_idle_timer(chat_id))
+        self._chat_mode[chat_id] = {
+            "session_id": session_id,
+            "container_id": container_id,
+            "session_name": session_name,
+            "window_index": window_index,
+            "timer_task": timer,
+        }
+
+    def _exit_chat_mode(self, chat_id: int) -> None:
+        """Clear chat mode for a chat."""
+        state = self._chat_mode.pop(chat_id, None)
+        if state:
+            timer = state.get("timer_task")
+            if timer and not timer.done():
+                timer.cancel()
+        # Also clear any pending proposal
+        from .voice_agent import VoiceAgent
+
+        try:
+            agent = VoiceAgent.get()
+            agent.clear_pending_proposal(chat_id)
+        except Exception:
+            pass
+
+    def _reset_chat_timer(self, chat_id: int) -> None:
+        """Reset the idle timer for chat mode."""
+        state = self._chat_mode.get(chat_id)
+        if not state:
+            return
+        timer = state.get("timer_task")
+        if timer and not timer.done():
+            timer.cancel()
+        state["timer_task"] = asyncio.create_task(self._chat_idle_timer(chat_id))
+
+    async def _chat_idle_timer(self, chat_id: int) -> None:
+        """Auto-exit chat mode after idle timeout."""
+        try:
+            await asyncio.sleep(TALK_IDLE_TIMEOUT)
+        except asyncio.CancelledError:
+            return
+        self._chat_mode.pop(chat_id, None)
+        if self._app:
+            try:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text="\U0001f916 Chat mode exited (idle timeout).",
+                )
+            except Exception:
+                logger.exception("Failed to send chat idle timeout message")
+
+    # ── Voice message handler ─────────────────────────────────
+
+    async def _handle_voice(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle voice/audio messages — route through AI agent."""
+        if not update.message or not update.effective_chat:
+            return
+
+        chat_id = update.effective_chat.id
+        if not self._is_registered(chat_id):
+            await update.message.reply_text(
+                "\u26a0\ufe0f This chat is not registered. Use /start <secret> first."
+            )
+            return
+
+        from ..config import config as app_config
+
+        settings = store.get_settings()
+        if not (settings.get("openaiApiKey") or app_config.openai_api_key):
+            await update.message.reply_text(
+                "\u26a0\ufe0f OpenAI API key is not configured. "
+                "Set it in Settings \u2192 Telegram."
+            )
+            return
+
+        # Determine session context
+        session_ctx = None
+
+        # 1. Chat mode
+        if chat_id in self._chat_mode:
+            state = self._chat_mode[chat_id]
+            session_ctx = {
+                "container_id": state["container_id"],
+                "session_name": state["session_name"],
+                "window_index": state["window_index"],
+                "session_id": state["session_id"],
+            }
+            self._reset_chat_timer(chat_id)
+
+        # 2. Reply to a bot message with session context
+        elif update.message.reply_to_message:
+            reply_to_id = update.message.reply_to_message.message_id
+            ctx = self._message_sessions.get((chat_id, reply_to_id))
+            if ctx:
+                from .tmux_manager import make_session_id
+
+                session_ctx = {
+                    **ctx,
+                    "session_id": make_session_id(ctx["container_id"], ctx["session_name"]),
+                }
+
+        if not session_ctx:
+            await update.message.reply_text(
+                "Enter /chat <session-id> first, or reply to a session message."
+            )
+            return
+
+        # Download voice file
+        voice = update.message.voice or update.message.audio
+        if not voice:
+            return
+
+        try:
+            file = await context.bot.get_file(voice.file_id)
+            voice_bytes = await file.download_as_bytearray()
+        except Exception:
+            logger.exception("Failed to download voice file")
+            await update.message.reply_text("\u26a0\ufe0f Failed to download voice message.")
+            return
+
+        # Transcribe
+        from .audio import transcribe
+
+        try:
+            transcript = await transcribe(bytes(voice_bytes))
+        except Exception:
+            logger.exception("Failed to transcribe voice")
+            await update.message.reply_text("\u26a0\ufe0f Failed to transcribe voice message.")
+            return
+
+        if not transcript.strip():
+            await update.message.reply_text("(could not understand audio)")
+            return
+
+        # Debug log transcription if enabled
+        settings = store.get_settings()
+        if settings.get("audioDebugLog"):
+            from .debug_log import DebugLog
+
+            user = update.effective_chat
+            user_label = user.username or user.first_name or str(chat_id)
+            DebugLog.get().info(
+                "audio",
+                f"Voice transcription from {user_label}",
+                transcript,
+            )
+
+        # Show transcription
+        escaped = _escape_md2(transcript)
+        await update.message.reply_text(
+            f"\U0001f399 _{escaped}_", parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+        # Process through agent
+        await self._process_agent_message(chat_id, session_ctx, transcript, voice_reply=True)
+
+    async def _process_agent_message(
+        self,
+        chat_id: int,
+        session_ctx: dict,
+        user_message: str,
+        voice_reply: bool = False,
+    ) -> None:
+        """Process a message through the voice agent and send results."""
+        from .voice_agent import VoiceAgent
+
+        agent = VoiceAgent.get()
+
+        try:
+            result = await agent.process_message(chat_id, session_ctx, user_message)
+        except Exception:
+            logger.exception("Agent processing failed")
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text="\u26a0\ufe0f Agent error. Please try again.",
+                )
+            return
+
+        if not self._app:
+            return
+
+        # Send screenshots
+        for screenshot in result.screenshots:
+            try:
+                await self._app.bot.send_photo(chat_id=chat_id, photo=screenshot)
+            except Exception:
+                logger.exception("Failed to send screenshot from agent")
+
+        # Send proposal if any
+        if result.proposal:
+            proposed = result.proposal.text
+            submit_label = " + Enter" if result.proposal.submit else ""
+            from html import escape as html_escape
+
+            proposal_text = (
+                f"\U0001f4dd <b>Proposed input{html_escape(submit_label)}:</b>\n"
+                f"<pre>{html_escape(proposed)}</pre>"
+            )
+            buttons = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("\u2705 Send", callback_data="proposal:approve"),
+                    InlineKeyboardButton("\u274c Cancel", callback_data="proposal:cancel"),
+                ],
+            ])
+            try:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=proposal_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=buttons,
+                )
+            except Exception:
+                logger.exception("Failed to send proposal message")
+
+            # Also send proposal as voice
+            if voice_reply and proposed:
+                try:
+                    from .audio import text_to_speech
+
+                    proposal_audio = await text_to_speech(
+                        f"I'd like to send: {proposed}"
+                    )
+                    await self._app.bot.send_voice(
+                        chat_id=chat_id, voice=BytesIO(proposal_audio)
+                    )
+                except Exception:
+                    logger.exception("Failed to send proposal voice")
+
+        # Send response text
+        if result.response_text:
+            # Send as text message
+            try:
+                msg = await self._app.bot.send_message(
+                    chat_id=chat_id, text=result.response_text
+                )
+                self._message_sessions[(chat_id, msg.message_id)] = {
+                    "container_id": session_ctx["container_id"],
+                    "session_name": session_ctx["session_name"],
+                    "window_index": session_ctx["window_index"],
+                }
+            except Exception:
+                logger.exception("Failed to send agent text response")
+
+            # Also send as voice if this was a voice interaction
+            if voice_reply:
+                try:
+                    from .audio import text_to_speech
+
+                    audio_bytes = await text_to_speech(result.response_text)
+                    await self._app.bot.send_voice(
+                        chat_id=chat_id, voice=BytesIO(audio_bytes)
+                    )
+                except Exception:
+                    logger.exception("Failed to send TTS voice response")
+
+    async def _handle_proposal_callback(
+        self, chat_id: int, action: str, query
+    ) -> None:
+        """Handle proposal approve/cancel callback."""
+        from .voice_agent import VoiceAgent
+
+        agent = VoiceAgent.get()
+        proposal = agent.clear_pending_proposal(chat_id)
+
+        if not proposal:
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text="\u26a0\ufe0f No pending proposal.",
+                )
+            return
+
+        if action == "approve":
+            from .tmux_manager import TmuxManager
+
+            tm = TmuxManager.get()
+            try:
+                await tm.send_keys(
+                    proposal.session_ctx["container_id"],
+                    proposal.session_ctx["session_name"],
+                    proposal.session_ctx["window_index"],
+                    proposal.text,
+                    enter=proposal.submit,
+                )
+                if self._app:
+                    await self._app.bot.send_message(
+                        chat_id=chat_id, text="\u2705 Sent to terminal."
+                    )
+            except Exception:
+                logger.exception("Failed to send proposed input")
+                if self._app:
+                    await self._app.bot.send_message(
+                        chat_id=chat_id,
+                        text="\u26a0\ufe0f Failed to send input to terminal.",
+                    )
+
+            # Notify agent
+            session_id = proposal.session_ctx.get("session_id", "")
+            await agent.notify_proposal_result(chat_id, session_id, approved=True)
+
+        else:
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id, text="\u274c Proposal cancelled."
+                )
+            session_id = proposal.session_ctx.get("session_id", "")
+            await agent.notify_proposal_result(chat_id, session_id, approved=False)
+
+        # Remove inline keyboard from proposal message
+        if query.message:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                await query.message.edit_reply_markup(reply_markup=None)
 
     # ── /unlock ───────────────────────────────────────────────
 
@@ -806,11 +1359,14 @@ class TelegramBot:
         if not update.message or not update.effective_chat:
             return
         chat_id = update.effective_chat.id
-        if chat_id in self._talk_mode:
+        if chat_id in self._chat_mode:
+            self._exit_chat_mode(chat_id)
+            await update.message.reply_text("\U0001f916 Chat mode exited.")
+        elif chat_id in self._talk_mode:
             self._exit_talk_mode(chat_id)
-            await update.message.reply_text("\U0001f4ac Talk mode exited.")
+            await update.message.reply_text("\U0001f4ac Send mode exited.")
         else:
-            await update.message.reply_text("No active talk mode.")
+            await update.message.reply_text("No active send or chat mode.")
 
     # ── Callback query handler ────────────────────────────────
 
@@ -846,35 +1402,50 @@ class TelegramBot:
             session_id = data[2:]
             await self._send_session_detail(chat_id, session_id, message_id=message_id)
 
-        elif data.startswith("s:"):
-            session_id = data[2:]
-            await self._do_screenshot(chat_id, session_id)
-
-        elif data.startswith("c:"):
-            session_id = data[2:]
-            await self._do_capture(chat_id, session_id)
-
-        elif data.startswith("t:"):
-            session_id = data[2:]
-            await self._do_talk(chat_id, session_id)
+        elif data.startswith("w:"):
+            parts = data[2:].rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                session_id, win = parts[0], int(parts[1])
+                await self._send_window_detail(
+                    chat_id, session_id, win, message_id=message_id
+                )
 
         elif data.startswith("sw:"):
-            parts = data[3:].split(":", 1)
-            if len(parts) == 2:
+            parts = data[3:].rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
                 session_id, win = parts[0], int(parts[1])
                 await self._do_screenshot(chat_id, session_id, window_index=win)
 
         elif data.startswith("cw:"):
-            parts = data[3:].split(":", 1)
-            if len(parts) == 2:
+            parts = data[3:].rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
                 session_id, win = parts[0], int(parts[1])
                 await self._do_capture(chat_id, session_id, window_index=win)
 
         elif data.startswith("tw:"):
-            parts = data[3:].split(":", 1)
-            if len(parts) == 2:
+            parts = data[3:].rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
                 session_id, win = parts[0], int(parts[1])
                 await self._do_talk(chat_id, session_id, window_index=win)
+
+        elif data.startswith("aw:"):
+            parts = data[3:].rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                session_id, win = parts[0], int(parts[1])
+                await self._do_chat(chat_id, session_id, window_index=win)
+
+        elif data.startswith("copyid:"):
+            window_id = data[7:]  # e.g. "abc123:0"
+            if self._app:
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"`{_escape_md2(window_id)}`",
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+
+        elif data.startswith("proposal:"):
+            action = data[9:]  # "approve" or "cancel"
+            await self._handle_proposal_callback(chat_id, action, query)
 
     # ── Message handler (notification replies + talk mode) ────
 
@@ -934,7 +1505,26 @@ class TelegramBot:
                 )
             return
 
-        # 2. If in talk mode, forward to tmux session
+        # 2. If in chat mode, route through AI agent
+        if chat_id in self._chat_mode:
+            text = update.message.text or ""
+            if not text.strip():
+                return
+
+            state = self._chat_mode[chat_id]
+            session_ctx = {
+                "container_id": state["container_id"],
+                "session_name": state["session_name"],
+                "window_index": state["window_index"],
+                "session_id": state["session_id"],
+            }
+            self._reset_chat_timer(chat_id)
+            await self._process_agent_message(
+                chat_id, session_ctx, text, voice_reply=False
+            )
+            return
+
+        # 3. If in talk mode, forward to tmux session
         if chat_id in self._talk_mode:
             text = update.message.text or ""
             if not text.strip():
@@ -956,11 +1546,12 @@ class TelegramBot:
                 logger.exception("Talk mode send failed")
                 self._exit_talk_mode(chat_id)
                 await update.message.reply_text(
-                    "\u26a0\ufe0f Send failed. Talk mode exited (session may be dead)."
+                    "\u26a0\ufe0f Send failed. Send mode exited (session may be dead)."
                 )
             return
 
-        # 3. Otherwise, show help hint
+        # 4. Otherwise, show help hint
         await update.message.reply_text(
-            "Use /list to browse sessions, or reply to a notification message."
+            "Use /list to browse sessions, /chat to start AI chat mode, "
+            "or reply to a notification message."
         )

@@ -54,6 +54,8 @@ export function TelegramSettingsPage() {
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramRegistrationSecret, setTelegramRegistrationSecret] = useState('');
   const [telegramTimeoutSecs, setTelegramTimeoutSecs] = useState(60);
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [chatModel, setChatModel] = useState('gpt-4o');
   const [secretCopied, setSecretCopied] = useState(false);
   const [generateError, setGenerateError] = useState('');
 
@@ -64,6 +66,8 @@ export function TelegramSettingsPage() {
     setTelegramToken(settings.telegramBotToken);
     setTelegramRegistrationSecret(settings.telegramRegistrationSecret ?? '');
     setTelegramTimeoutSecs(settings.telegramNotificationTimeoutSecs ?? 60);
+    setOpenaiApiKey(settings.openaiApiKey ?? '');
+    setChatModel(settings.chatModel ?? 'gpt-4o');
   }
 
   const invalidateSettings = () => queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -76,6 +80,21 @@ export function TelegramSettingsPage() {
 
   const saveTimeoutMutation = useMutation({
     mutationFn: () => api.updateSettings({ telegramNotificationTimeoutSecs: telegramTimeoutSecs }),
+    onSuccess: invalidateSettings,
+  });
+
+  const saveOpenaiKeyMutation = useMutation({
+    mutationFn: () => api.updateSettings({ openaiApiKey }),
+    onSuccess: invalidateSettings,
+  });
+
+  const saveChatModelMutation = useMutation({
+    mutationFn: () => api.updateSettings({ chatModel }),
+    onSuccess: invalidateSettings,
+  });
+
+  const toggleAudioDebugMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updateSettings({ audioDebugLog: enabled }),
     onSuccess: invalidateSettings,
   });
 
@@ -277,6 +296,91 @@ export function TelegramSettingsPage() {
             <p className="text-xs text-gray-600 mt-1">
               Time to wait before sending notification to Telegram (if no browser responds)
             </p>
+          </div>
+
+          {/* AI Agent Section */}
+          <div className="border-t border-gray-800 pt-6">
+            <h2 className="text-base font-medium text-gray-300 mb-4">AI Voice Agent</h2>
+            <div className="space-y-4">
+              {/* OpenAI API Key */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm text-gray-400">OpenAI API Key</label>
+                  <InlineSaveButton
+                    onClick={() => saveOpenaiKeyMutation.mutate()}
+                    isPending={saveOpenaiKeyMutation.isPending}
+                    isError={saveOpenaiKeyMutation.isError}
+                    isSuccess={saveOpenaiKeyMutation.isSuccess}
+                  />
+                </div>
+                <input
+                  type="password"
+                  value={openaiApiKey}
+                  onChange={(e) => {
+                    setOpenaiApiKey(e.target.value);
+                    saveOpenaiKeyMutation.reset();
+                  }}
+                  placeholder="sk-..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 font-mono"
+                />
+                {saveOpenaiKeyMutation.isError && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {saveOpenaiKeyMutation.error.message}
+                  </p>
+                )}
+                <p className="text-xs text-gray-600 mt-1">
+                  Required for /chat voice agent (STT, LLM, TTS)
+                </p>
+              </div>
+
+              {/* Chat Model */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm text-gray-400">Chat Model</label>
+                  <InlineSaveButton
+                    onClick={() => saveChatModelMutation.mutate()}
+                    isPending={saveChatModelMutation.isPending}
+                    isError={saveChatModelMutation.isError}
+                    isSuccess={saveChatModelMutation.isSuccess}
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={chatModel}
+                  onChange={(e) => {
+                    setChatModel(e.target.value);
+                    saveChatModelMutation.reset();
+                  }}
+                  placeholder="gpt-4o"
+                  className="w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Audio Debug Log */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm text-gray-400">Audio Debug Log</label>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Log transcriptions of voice messages to the debug log
+                </p>
+              </div>
+              <button
+                onClick={() => toggleAudioDebugMutation.mutate(!settings?.audioDebugLog)}
+                disabled={toggleAudioDebugMutation.isPending}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings?.audioDebugLog ? 'bg-blue-600' : 'bg-gray-700'
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                    settings?.audioDebugLog ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
       </div>
