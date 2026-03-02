@@ -2,7 +2,7 @@ import { useEffect, useRef, useImperativeHandle, useCallback, forwardRef, useSta
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 
 const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
@@ -264,7 +264,7 @@ function setupWebSocketTerminal(
     if (e.key === 'c' || e.key === 'C') {
       const shouldCopy = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldCopy && term.hasSelection()) {
-        navigator.clipboard.writeText(term.getSelection());
+        copyToClipboard(term.getSelection());
         return false;
       }
     }
@@ -273,11 +273,8 @@ function setupWebSocketTerminal(
       const shouldPaste = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldPaste) {
         navigator.clipboard.readText().then((text) => {
-          const ws = wsRef.current;
-          if (text && ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(text);
-          }
-        });
+          if (text) term.paste(text);
+        }).catch(() => { /* Safari clipboard permission denied */ });
         return false;
       }
     }
@@ -424,6 +421,51 @@ function setupWebSocketTerminal(
   return { cleanup, inScrollMode };
 }
 
+/** Copy text to system clipboard — tries multiple strategies for iPad Safari.
+ *  Returns a string describing which method succeeded (for debug feedback). */
+async function copyToClipboard(text: string): Promise<string> {
+  // Strategy 1: Clipboard API (works in user-gesture click handlers on modern Safari)
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return 'Copied';
+    } catch { /* fall through */ }
+  }
+
+  // Strategy 2: copy event interception
+  {
+    let ok = false;
+    const handler = (e: ClipboardEvent) => {
+      e.clipboardData!.setData('text/plain', text);
+      e.preventDefault();
+      ok = true;
+    };
+    document.addEventListener('copy', handler);
+    document.execCommand('copy');
+    document.removeEventListener('copy', handler);
+    if (ok) return 'Copied (event)';
+  }
+
+  // Strategy 3: textarea selection (iOS fallback)
+  {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.fontSize = '20px';
+    document.body.appendChild(ta);
+    const range = document.createRange();
+    range.selectNodeContents(ta);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    ta.setSelectionRange(0, 999999);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) return 'Copied (textarea)';
+  }
+
+  return 'Copy failed — all methods';
+}
+
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml'];
 
 async function uploadAndInject(
@@ -473,7 +515,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const composingRef = useRef(false);
   const prevInputRef = useRef('');
   const [selectMode, setSelectMode] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [showPasteInput, setShowPasteInput] = useState(false);
+  const pasteInputRef = useRef<HTMLInputElement>(null);
   const [hasSelection, setHasSelection] = useState(false);
+  const selectionTextRef = useRef('');
   const selectModeRef = useRef(false);
   selectModeRef.current = selectMode;
   const selectStartRef = useRef<{ col: number; row: number } | null>(null);
@@ -555,8 +601,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     fitAddonRef.current = fitAddon;
 
     // Track text selection for Copy button (touch select mode)
+    // Cache the selected text so it's available even if focus moves away.
+    // Only update on new selection — never clear on deselect, because on iPad
+    // tapping the Copy button clears the selection before onClick fires.
     const selectionDisposable = term.onSelectionChange(() => {
-      setHasSelection(term.hasSelection());
+      const has = term.hasSelection();
+      setHasSelection(has);
+      if (has) selectionTextRef.current = term.getSelection();
     });
 
     // Measure container (flex-sized) and fit terminal
@@ -592,7 +643,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const resizeObserver = new ResizeObserver(() => fitAndResize());
     resizeObserver.observe(container);
 
-    // --- Paste handler: intercept image pastes ---
+    // --- Paste handler: intercept image and text pastes ---
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -608,6 +659,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         e.preventDefault();
         e.stopPropagation();
         uploadAndInject(imageFile, containerId, wsRef.current, term);
+        return;
+      }
+      // Handle plain text paste (iPad long-press → Paste popup)
+      if (hasText) {
+        const text = e.clipboardData?.getData('text/plain');
+        if (text) {
+          e.preventDefault();
+          e.stopPropagation();
+          term.paste(text);
+        }
       }
     };
 
@@ -892,6 +953,20 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     });
   }, [sendToWs]);
 
+  const handlePasteButton = useCallback(async () => {
+    // Try Clipboard API first (works on desktop, may fail on iOS Safari)
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        xtermRef.current?.paste(text);
+        return;
+      }
+    } catch { /* clipboard permission denied — fall through */ }
+    // Fallback: show an input field where the user can native-paste
+    setShowPasteInput(true);
+    setTimeout(() => pasteInputRef.current?.focus(), 50);
+  }, []);
+
   // Wrapper: absolute-positioned flex column; terminal fills remaining space
   return (
     <div ref={wrapperRef} className="absolute inset-1 overflow-hidden flex flex-col">
@@ -1014,7 +1089,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
                 />
               </div>
             )}
-            <div className="flex items-center gap-1 px-2 py-1.5">
+            <div className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
             {[
               { label: 'Esc', data: '\x1b' },
               { label: 'Tab', data: '\t' },
@@ -1030,17 +1105,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
                 onMouseDown={(e) => e.preventDefault()}
                 onTouchStart={(e) => e.preventDefault()}
                 onClick={() => sendVirtualKey(data)}
-                className={`px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors ${className || 'text-gray-200'}`}
+                className={`px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors shrink-0 ${className || 'text-gray-200'}`}
               >
                 {label}
               </button>
             ))}
-            <div className="w-px h-5 bg-gray-700 mx-0.5" />
+            <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
             <button
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => sendVirtualKey('\x1b[D')}
-              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 shrink-0"
             >
               <ChevronLeft size={14} />
             </button>
@@ -1048,7 +1123,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => sendVirtualKey('\x1b[B', 'down')}
-              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 shrink-0"
             >
               <ChevronDown size={14} />
             </button>
@@ -1056,7 +1131,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => sendVirtualKey('\x1b[A', 'up')}
-              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 shrink-0"
             >
               <ChevronUp size={14} />
             </button>
@@ -1064,7 +1139,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => sendVirtualKey('\x1b[C')}
-              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+              className="px-2 py-1 rounded text-xs bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 shrink-0"
             >
               <ChevronRight size={14} />
             </button>
@@ -1072,46 +1147,95 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => sendVirtualKey('|')}
-              className="px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200"
+              className="px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 shrink-0"
             >
               |
             </button>
-            <div className="w-px h-5 bg-gray-700 mx-0.5" />
+            <div className="flex-1" />
+            {/* Clipboard & select mode — right side */}
+            {showPasteInput ? (
+              <input
+                ref={pasteInputRef}
+                type="text"
+                autoComplete="off"
+                placeholder="Long-press to paste here"
+                className="w-40 bg-gray-800 border border-blue-500 rounded px-2 py-1 text-xs text-gray-200 font-mono outline-none shrink-0"
+                onPaste={(e) => {
+                  e.preventDefault();
+                  const text = e.clipboardData.getData('text/plain');
+                  if (text) xtermRef.current?.paste(text);
+                  setShowPasteInput(false);
+                  xtermRef.current?.focus();
+                }}
+                onBlur={() => setShowPasteInput(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowPasteInput(false);
+                    xtermRef.current?.focus();
+                  }
+                }}
+              />
+            ) : (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={handlePasteButton}
+                className="px-2.5 py-1 rounded text-xs font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors text-gray-200 flex items-center gap-1 shrink-0"
+                title="Paste from clipboard"
+              >
+                <ClipboardPaste size={12} /> Paste
+              </button>
+            )}
             <button
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
               onClick={() => {
                 if (selectMode) {
                   xtermRef.current?.clearSelection();
+                  selectionTextRef.current = '';
                   setSelectMode(false);
                   setHasSelection(false);
+                  setCopyFeedback(null);
                 } else {
                   setSelectMode(true);
                 }
               }}
-              className={`px-1.5 py-1 rounded transition-colors ${selectMode ? 'text-blue-400 bg-blue-900/30' : 'text-gray-400 hover:text-gray-200'}`}
+              className={`px-1.5 py-1 rounded transition-colors shrink-0 ${selectMode ? 'text-blue-400 bg-blue-900/30' : 'text-gray-400 hover:text-gray-200'}`}
               title={selectMode ? 'Exit select mode' : 'Select text'}
             >
               <MousePointer2 size={14} />
             </button>
-            {selectMode && hasSelection && (
+            {selectMode && (
               <button
                 onMouseDown={(e) => e.preventDefault()}
-                onTouchStart={(e) => e.preventDefault()}
-                onClick={() => {
-                  const sel = xtermRef.current?.getSelection();
-                  if (sel) navigator.clipboard.writeText(sel);
+                onClick={async () => {
+                  const sel = selectionTextRef.current || xtermRef.current?.getSelection() || '';
+                  if (!sel) {
+                    setCopyFeedback('No text');
+                    setTimeout(() => setCopyFeedback(null), 3000);
+                    return;
+                  }
+                  const result = await copyToClipboard(sel);
+                  setCopyFeedback(`${result} (${sel.length}ch)`);
                   xtermRef.current?.clearSelection();
-                  xtermRef.current?.blur();
-                  setSelectMode(false);
+                  selectionTextRef.current = '';
                   setHasSelection(false);
+                  setTimeout(() => {
+                    setCopyFeedback(null);
+                    setSelectMode(false);
+                  }, 3000);
                 }}
-                className="px-2 py-1 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 active:bg-blue-700 transition-colors text-white flex items-center gap-1"
+                className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 shrink-0 ${
+                  hasSelection
+                    ? 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white'
+                    : copyFeedback
+                      ? 'bg-green-700 text-white'
+                      : 'bg-gray-700 text-gray-500'
+                }`}
               >
-                <Copy size={12} /> Copy
+                <Copy size={12} /> {copyFeedback || 'Copy'}
               </button>
             )}
-            <div className="flex-1" />
             <button
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
