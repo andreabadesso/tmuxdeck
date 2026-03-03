@@ -110,6 +110,7 @@ export interface Settings {
   openaiApiKey?: string;
   chatModel?: string;
   audioDebugLog?: boolean;
+  telegramVoiceNotifications?: boolean;
   hotkeys?: Record<string, string>;
 }
 

@@ -183,7 +183,7 @@ class TelegramBot:
             _active_bot = None
             logger.info("Telegram bot stopped")
 
-    async def send_notification(self, record: NotificationRecord) -> None:
+    async def send_notification(self, record: NotificationRecord, voice: bool = False) -> None:
         """Send a notification to all registered chat IDs."""
         if not self._app:
             return
@@ -217,6 +217,169 @@ class TelegramBot:
                 logger.info("Sent Telegram notification to chat %d", chat_id)
             except Exception:
                 logger.exception("Failed to send Telegram message to chat %d", chat_id)
+
+        # Fire-and-forget: generate and send a voice summary (for CarPlay)
+        if voice and record.telegram_message_id is not None:
+            asyncio.create_task(self._send_voice_notification(record))
+
+    # ── Voice notifications (CarPlay) ────────────────────────
+
+    _NOTIFICATION_SUMMARY_PROMPT = (
+        "You are a voice assistant summarizing a terminal notification for a developer "
+        "who is driving and listening via CarPlay. Be concise — one or two sentences max. "
+        "Speak naturally as if briefing someone. Include the key action needed.\n\n"
+        "Notification types:\n"
+        "- permission_prompt: Claude Code needs permission to do something\n"
+        "- user_prompt: Claude Code is asking a question\n"
+        "- elicitation_dialog: Claude Code has a question with options\n"
+        "- Generic: something needs attention\n\n"
+        "Respond ONLY with the spoken summary text, nothing else."
+    )
+
+    async def _send_voice_notification(self, record: NotificationRecord) -> None:
+        """Generate a spoken summary and send as voice message for CarPlay."""
+        if not self._app:
+            return
+
+        try:
+            # 1. Capture terminal content for context
+            from .tmux_manager import TmuxManager
+
+            tm = TmuxManager.get()
+            try:
+                pane_content = (await tm.capture_pane(
+                    record.container_id,
+                    record.tmux_session,
+                    window_index=record.tmux_window,
+                    ansi=False,
+                    max_lines=100,
+                )).lstrip("\n")
+            except Exception:
+                logger.warning("Failed to capture pane for voice notification %s", record.id)
+                pane_content = ""
+
+            # 2. Generate spoken summary via GPT
+            summary = await self._generate_notification_summary(record, pane_content)
+
+            # 3. Convert to speech
+            from .audio import text_to_speech
+
+            audio_bytes = await text_to_speech(summary)
+
+            # 4. Send voice message as reply to the text notification
+            chat_id = record.telegram_chat_id
+            if chat_id and record.telegram_message_id:
+                await self._app.bot.send_voice(
+                    chat_id=chat_id,
+                    voice=BytesIO(audio_bytes),
+                    reply_to_message_id=record.telegram_message_id,
+                )
+                logger.info("Sent voice notification for %s to chat %d", record.id, chat_id)
+
+        except Exception:
+            # Voice notification is best-effort; text notification was already sent
+            logger.exception("Failed to send voice notification for %s", record.id)
+
+    async def _generate_notification_summary(
+        self, record: NotificationRecord, pane_content: str
+    ) -> str:
+        """Use GPT to generate a concise spoken summary of the notification."""
+        try:
+            from .voice_agent import VoiceAgent
+
+            agent = VoiceAgent.get()
+            client, model = agent._get_client_and_model()
+
+            user_content = (
+                f"Notification type: {record.notification_type}\n"
+                f"Title: {record.title}\n"
+                f"Message: {record.message}\n"
+                f"Session: {record.tmux_session}:{record.tmux_window}\n"
+            )
+            if pane_content:
+                lines = pane_content.strip().splitlines()
+                if len(lines) > 50:
+                    lines = lines[-50:]
+                user_content += f"\nTerminal content (last lines):\n{chr(10).join(lines)}\n"
+
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": self._NOTIFICATION_SUMMARY_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                max_tokens=150,
+                temperature=0.7,
+            )
+
+            summary = response.choices[0].message.content or ""
+            return summary.strip() or self._fallback_summary(record)
+
+        except Exception:
+            logger.exception("GPT summary generation failed for %s", record.id)
+            return self._fallback_summary(record)
+
+    @staticmethod
+    def _fallback_summary(record: NotificationRecord) -> str:
+        """Generate a simple fallback summary without GPT."""
+        session = f"{record.tmux_session}, window {record.tmux_window}"
+        ntype = record.notification_type
+
+        if ntype == "permission_prompt":
+            return f"Claude Code in session {session} needs permission. {record.message}"
+        elif ntype == "user_prompt":
+            return f"Claude Code in session {session} is asking: {record.message}"
+        elif ntype == "elicitation_dialog":
+            return f"Claude Code in session {session} has a question: {record.message}"
+        else:
+            return f"Session {session} needs your attention. {record.title}. {record.message}"
+
+    # ── Smart notification reply routing ─────────────────────
+
+    _SIMPLE_CONFIRMATIONS = {
+        "yes", "y", "yeah", "yep", "approve", "go ahead", "do it",
+        "confirm", "ok", "okay", "sure", "proceed", "accept",
+        "si", "sim",
+    }
+    _SIMPLE_DENIALS = {
+        "no", "n", "nah", "nope", "deny", "reject", "cancel", "stop",
+        "nao",
+    }
+
+    async def _process_notification_reply(
+        self,
+        chat_id: int,
+        session_ctx: dict,
+        text: str,
+        record: NotificationRecord,
+    ) -> None:
+        """Handle a reply to a voice notification — auto-confirm or route through AI."""
+        normalized = text.strip().lower().rstrip(".!?")
+
+        # Fast path: simple yes/no for permission prompts
+        if record.notification_type == "permission_prompt":
+            from .tmux_manager import TmuxManager
+
+            tm = TmuxManager.get()
+            if normalized in self._SIMPLE_CONFIRMATIONS:
+                await tm.send_keys(
+                    record.container_id, record.tmux_session,
+                    record.tmux_window, "y", enter=True,
+                )
+                if self._app:
+                    await self._app.bot.send_message(chat_id=chat_id, text="\u2705 Approved.")
+                return
+            elif normalized in self._SIMPLE_DENIALS:
+                await tm.send_keys(
+                    record.container_id, record.tmux_session,
+                    record.tmux_window, "n", enter=True,
+                )
+                if self._app:
+                    await self._app.bot.send_message(chat_id=chat_id, text="\u274c Denied.")
+                return
+
+        # Complex reply — route through full AI agent
+        await self._process_agent_message(chat_id, session_ctx, text, voice_reply=False)
 
     # ── /start ────────────────────────────────────────────────
 
@@ -1510,7 +1673,19 @@ class TelegramBot:
             record = nm.handle_telegram_reply(reply_to_id, text)
 
             if record:
-                await update.message.reply_text("\u2705")
+                if record.voice_notification_sent:
+                    # Route through smart reply handler for AI interpretation
+                    from .tmux_manager import make_session_id
+
+                    session_ctx = {
+                        "container_id": record.container_id,
+                        "session_name": record.tmux_session,
+                        "window_index": record.tmux_window,
+                        "session_id": make_session_id(record.container_id, record.tmux_session),
+                    }
+                    await self._process_notification_reply(chat_id, session_ctx, text, record)
+                else:
+                    await update.message.reply_text("\u2705")
             else:
                 await update.message.reply_text(
                     "\u26a0\ufe0f Could not find the notification for this message. "

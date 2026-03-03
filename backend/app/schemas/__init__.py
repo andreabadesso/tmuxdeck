@@ -141,6 +141,7 @@ class SettingsResponse(CamelModel):
     openai_api_key: str
     chat_model: str
     audio_debug_log: bool
+    telegram_voice_notifications: bool
     hotkeys: dict[str, str]
 
 
@@ -155,6 +156,7 @@ class UpdateSettingsRequest(CamelModel):
     openai_api_key: str | None = None
     chat_model: str | None = None
     audio_debug_log: bool | None = None
+    telegram_voice_notifications: bool | None = None
     hotkeys: dict[str, str] | None = None
 
 

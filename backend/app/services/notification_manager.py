@@ -29,6 +29,7 @@ class NotificationRecord:
     telegram_chat_id: int | None = None
     channels: list[str] = field(default_factory=lambda: ["web", "os", "telegram"])
     responses: list[str] = field(default_factory=list)
+    voice_notification_sent: bool = False
     _timer_task: asyncio.Task | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,6 +69,11 @@ class NotificationManager:
         from .. import store
         settings = store.get_settings()
         return settings.get("telegramNotificationsEnabled", True)
+
+    def _is_voice_notifications_enabled(self) -> bool:
+        from .. import store
+        settings = store.get_settings()
+        return settings.get("telegramVoiceNotifications", False)
 
     def _get_timeout(self) -> int:
         from .. import store
@@ -182,11 +188,16 @@ class NotificationManager:
         return None
 
     def handle_telegram_reply(self, message_id: int, text: str) -> NotificationRecord | None:
-        """Look up notification by telegram_message_id, route reply to terminal."""
+        """Look up notification by telegram_message_id, route reply to terminal.
+
+        When voice_notification_sent is True, skips raw terminal send — the caller
+        (telegram_bot) is expected to route through the AI agent instead.
+        """
         for record in self._notifications.values():
             if record.telegram_message_id == message_id:
                 record.responses.append(text)
-                self._send_to_terminal(record, text)
+                if not record.voice_notification_sent:
+                    self._send_to_terminal(record, text)
                 return record
         return None
 
@@ -215,8 +226,11 @@ class NotificationManager:
 
         if self._telegram_bot:
             try:
-                await self._telegram_bot.send_notification(record)
+                voice = self._is_voice_notifications_enabled()
+                await self._telegram_bot.send_notification(record, voice=voice)
                 record.status = "telegram_sent"
+                if voice:
+                    record.voice_notification_sent = True
                 logger.info("Telegram notification sent for %s", notification_id)
             except Exception:
                 logger.exception("Failed to send Telegram notification for %s", notification_id)

@@ -98,6 +98,11 @@ export function TelegramSettingsPage() {
     onSuccess: invalidateSettings,
   });
 
+  const toggleVoiceNotificationsMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updateSettings({ telegramVoiceNotifications: enabled }),
+    onSuccess: invalidateSettings,
+  });
+
   const toggleAudioDebugMutation = useMutation({
     mutationFn: (enabled: boolean) => api.updateSettings({ audioDebugLog: enabled }),
     onSuccess: invalidateSettings,
@@ -290,6 +295,31 @@ export function TelegramSettingsPage() {
                 <span
                   className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
                     settings?.telegramNotificationsEnabled !== false ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Voice Notifications (CarPlay) */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm text-gray-400">Voice Notifications</label>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Send spoken summaries alongside text notifications (for CarPlay)
+                </p>
+              </div>
+              <button
+                onClick={() => toggleVoiceNotificationsMutation.mutate(!settings?.telegramVoiceNotifications)}
+                disabled={toggleVoiceNotificationsMutation.isPending || !settings?.telegramNotificationsEnabled}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings?.telegramVoiceNotifications ? 'bg-blue-600' : 'bg-gray-700'
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                    settings?.telegramVoiceNotifications ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

@@ -199,6 +199,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "openaiApiKey": "",
     "chatModel": "gpt-4o",
     "audioDebugLog": False,
+    "telegramVoiceNotifications": False,
     "hotkeys": dict(_DEFAULT_HOTKEYS),
 }
 
