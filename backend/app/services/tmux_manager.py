@@ -413,6 +413,12 @@ class TmuxManager:
             "-t", f"{dst_session}:",
         ])
 
+    async def rename_window(self, container_id: str, session_name: str, window_index: int, new_name: str) -> None:
+        """Rename a tmux window."""
+        await self._run_cmd(container_id, [
+            "tmux", "rename-window", "-t", f"{session_name}:{window_index}", new_name,
+        ])
+
     async def create_window(self, container_id: str, session_name: str, window_name: str | None = None) -> list[dict]:
         """Create a new window in a tmux session.
 
