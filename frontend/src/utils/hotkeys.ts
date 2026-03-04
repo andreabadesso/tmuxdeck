@@ -60,7 +60,7 @@ export function matchesBinding(e: KeyboardEvent, binding: string): boolean {
   if (parsed.alt !== e.altKey) return false;
 
   const eventKey = resolveKey(e);
-  return eventKey === parsed.key;
+  return eventKey.toLowerCase() === parsed.key.toLowerCase();
 }
 
 /**

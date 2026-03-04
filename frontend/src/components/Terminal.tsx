@@ -523,6 +523,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectModeRef = useRef(false);
   selectModeRef.current = selectMode;
   const selectStartRef = useRef<{ col: number; row: number } | null>(null);
+  const [ctrlActive, setCtrlActive] = useState(false);
+  const [shiftActive, setShiftActive] = useState(false);
+  const [altActive, setAltActive] = useState(false);
+  // Refs mirror modifier state for synchronous access in event handlers (avoids stale closures)
+  const ctrlRef = useRef(false);
+  const shiftRef = useRef(false);
+  const altRef = useRef(false);
+  ctrlRef.current = ctrlActive;
+  shiftRef.current = shiftActive;
+  altRef.current = altActive;
 
   // Send current size to backend — skips if dimensions haven't changed
   // unless `force` is true (e.g. initial connection).
@@ -931,16 +941,62 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   const sendToWs = useCallback((data: string) => {
     const ws = wsRef.current;
+    console.log('[sendToWs]', JSON.stringify(data), 'charCodes', [...data].map(c => c.charCodeAt(0)), 'wsOpen', ws?.readyState === WebSocket.OPEN);
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(data);
     }
   }, []);
 
+  // Shared helper: apply active Ctrl/Shift/Alt modifiers to data, clear modifier state.
+  // Uses refs for synchronous reads so it works reliably from any event handler.
+  const applyModifiers = useCallback((data: string): string => {
+    const ctrl = ctrlRef.current;
+    const shift = shiftRef.current;
+    const alt = altRef.current;
+    console.log('[applyModifiers] called', { data: JSON.stringify(data), ctrl, shift, alt });
+    if (!ctrl && !shift && !alt) return data;
+
+    let modifiedData = data;
+    // CSI escape sequence like \x1b[A, \x1b[B, etc.
+    const csiMatch = data.match(/^\x1b\[([A-D]|[0-9]+~)$/);
+    if (csiMatch) {
+      const modParam = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+      if (csiMatch[1].length === 1) {
+        modifiedData = `\x1b[1;${modParam}${csiMatch[1]}`;
+      } else {
+        const code = csiMatch[1].slice(0, -1);
+        modifiedData = `\x1b[${code};${modParam}~`;
+      }
+    } else if (data.length === 1 && data.charCodeAt(0) >= 0x20) {
+      // Single printable character
+      let ch = data;
+      if (shift) ch = ch.toUpperCase();
+      if (alt) ch = `\x1b${ch}`;
+      if (ctrl) {
+        const code = ch.charCodeAt(ch.length - 1) & 0x1f;
+        modifiedData = alt ? `\x1b${String.fromCharCode(code)}` : String.fromCharCode(code);
+      } else {
+        modifiedData = ch;
+      }
+    }
+    // Clear modifiers after use (update both refs and state)
+    ctrlRef.current = false;
+    shiftRef.current = false;
+    altRef.current = false;
+    setCtrlActive(false);
+    setShiftActive(false);
+    setAltActive(false);
+    console.log('[applyModifiers] result', JSON.stringify(modifiedData), 'charCodes', [...modifiedData].map(c => c.charCodeAt(0)));
+    return modifiedData;
+  }, []);
+
   const sendVirtualKey = useCallback((data: string, isScroll?: 'up' | 'down') => {
+    const modifiedData = applyModifiers(data);
+
     if (isScroll && inScrollModeRef.current.current) {
       sendToWs(`SCROLL:${isScroll}:1:line`);
     } else {
-      sendToWs(data);
+      sendToWs(modifiedData);
     }
     // Restore focus to whatever had it (text input or terminal)
     const active = document.activeElement;
@@ -951,7 +1007,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         xtermRef.current?.focus();
       }
     });
-  }, [sendToWs]);
+  }, [sendToWs, applyModifiers]);
 
   const handlePasteButton = useCallback(async () => {
     // Try Clipboard API first (works on desktop, may fail on iOS Safari)
@@ -1055,22 +1111,39 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
                   spellCheck={false}
                   placeholder="Type here (slide/autocomplete)..."
                   className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 font-mono outline-none focus:border-blue-500"
-                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionStart={() => { console.log('[compositionStart]'); composingRef.current = true; }}
                   onCompositionEnd={(e) => {
                     composingRef.current = false;
-                    // Send the composed text (autocomplete/slide result)
+                    // Send the composed text (autocomplete/slide result), applying modifiers if active
                     const composed = (e.target as HTMLInputElement).value.slice(prevInputRef.current.length);
-                    if (composed) sendToWs(composed);
+                    console.log('[compositionEnd]', { composed: JSON.stringify(composed), ctrlRef: ctrlRef.current });
+                    if (composed) {
+                      if (ctrlRef.current || shiftRef.current || altRef.current) {
+                        for (const ch of composed) {
+                          sendToWs(applyModifiers(ch));
+                        }
+                      } else {
+                        sendToWs(composed);
+                      }
+                    }
                     prevInputRef.current = (e.target as HTMLInputElement).value;
                   }}
                   onInput={(e) => {
+                    console.log('[onInput]', { composing: composingRef.current, value: (e.target as HTMLInputElement).value, prev: prevInputRef.current, ctrlRef: ctrlRef.current });
                     if (composingRef.current) return; // wait for compositionEnd
                     const el = e.target as HTMLInputElement;
                     const newVal = el.value;
                     const oldVal = prevInputRef.current;
                     if (newVal.length > oldVal.length) {
-                      // Characters added — send the new ones
-                      sendToWs(newVal.slice(oldVal.length));
+                      // Characters added — apply modifiers (via refs) then send
+                      const added = newVal.slice(oldVal.length);
+                      if (ctrlRef.current || shiftRef.current || altRef.current) {
+                        for (const ch of added) {
+                          sendToWs(applyModifiers(ch));
+                        }
+                      } else {
+                        sendToWs(added);
+                      }
                     } else if (newVal.length < oldVal.length) {
                       // Characters deleted — send backspaces
                       const deleted = oldVal.length - newVal.length;
@@ -1079,9 +1152,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
                     prevInputRef.current = newVal;
                   }}
                   onKeyDown={(e) => {
+                    console.log('[onKeyDown]', { key: e.key, keyCode: e.keyCode, ctrlRef: ctrlRef.current, shiftRef: shiftRef.current, altRef: altRef.current });
+                    // When a modifier is active, intercept the keypress BEFORE it enters the input
+                    if ((ctrlRef.current || shiftRef.current || altRef.current) && e.key.length === 1) {
+                      e.preventDefault();
+                      console.log('[onKeyDown] intercepted, sending modified key');
+                      sendToWs(applyModifiers(e.key));
+                      return;
+                    }
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      sendToWs('\r');
+                      sendToWs(applyModifiers('\r'));
                       if (textInputRef.current) textInputRef.current.value = '';
                       prevInputRef.current = '';
                     }
@@ -1095,10 +1176,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               { label: 'Tab', data: '\t' },
               { label: 'S-Tab', data: '\x1b[Z' },
               { label: '^C', data: '\x03', className: 'text-red-400' },
-              { label: '^D', data: '\x04' },
-              { label: '^Z', data: '\x1a' },
-              { label: '/', data: '/' },
-              { label: '/clear', data: '/clear\r' },
             ].map(({ label, data, className }) => (
               <button
                 key={label}
@@ -1106,6 +1183,21 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
                 onTouchStart={(e) => e.preventDefault()}
                 onClick={() => sendVirtualKey(data)}
                 className={`px-2.5 py-1 rounded text-xs font-mono font-medium bg-gray-800 hover:bg-gray-700 active:bg-gray-600 transition-colors shrink-0 ${className || 'text-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+            {[
+              { label: 'Ctrl', active: ctrlActive, toggle: setCtrlActive },
+              { label: 'Shift', active: shiftActive, toggle: setShiftActive },
+              { label: 'Alt', active: altActive, toggle: setAltActive },
+            ].map(({ label, active, toggle }) => (
+              <button
+                key={label}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => { console.log(`[modifier] ${label} toggled, was:`, active, 'refs:', { ctrl: ctrlRef.current, shift: shiftRef.current, alt: altRef.current }); toggle(v => !v); }}
+                className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-colors shrink-0 ${active ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 text-gray-200'}`}
               >
                 {label}
               </button>
