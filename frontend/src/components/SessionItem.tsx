@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check, CircleOff } from 'lucide-react';
 import type { TmuxSession, TmuxWindow, SessionTarget, Selection } from '../types';
-import { isFoldedSelection } from '../types';
+import { isFoldedSelection, isWindowSelection } from '../types';
 import { api } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getSessionExpanded, saveSessionExpanded } from '../utils/sidebarState';
@@ -407,7 +407,7 @@ export function SessionItem({
 
   const hasAnyWindowSelected =
     selectedSession != null &&
-    !isFoldedSelection(selectedSession) &&
+    isWindowSelection(selectedSession) &&
     selectedSession.containerId === containerId &&
     selectedSession.sessionName === session.name;
 

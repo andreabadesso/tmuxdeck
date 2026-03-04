@@ -607,6 +607,20 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       return true;
     });
 
+    // Register OSC 52 handler for remote-to-local clipboard copy
+    const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
+      // Format: "c;<base64>" or just "<base64>"
+      const parts = data.split(';');
+      const b64 = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+      if (b64) {
+        try {
+          const text = atob(b64);
+          copyToClipboard(text);
+        } catch { /* ignore decode errors */ }
+      }
+      return true;
+    });
+
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -861,6 +875,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(momentumRafId);
       oscDisposable.dispose();
+      osc52Disposable.dispose();
       selectionDisposable.dispose();
       const cleanup = (wrapper as unknown as Record<string, (() => void) | undefined>).__wsCleanup;
       cleanup?.();
