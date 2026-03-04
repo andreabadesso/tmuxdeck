@@ -50,6 +50,21 @@ async def _set_tmux_extended_keys(tmux_prefix: list[str]) -> None:
         pass  # tmux may not support extended-keys on older versions
 
 
+async def _is_alternate_screen(tmux_prefix: list[str], session_name: str) -> bool:
+    """Check if the active pane in the tmux session uses the alternate screen."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "display-message", "-p", "-t", session_name,
+            "#{alternate_on}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        return stdout.decode().strip() == "1"
+    except OSError:
+        return False
+
+
 async def _set_tmux_passthrough(tmux_prefix: list[str]) -> None:
     """Enable DCS passthrough so tmuxdeck-open can send OSC sequences
     through tmux to xterm.js in the browser (requires tmux >= 3.3a)."""
@@ -273,43 +288,72 @@ async def _pty_terminal(
                         try:
                             parts = text.split(":")
                             direction = parts[1] if len(parts) > 1 else ""
+                            count = parts[2] if len(parts) > 2 else "3"
+                            scroll_type = parts[3] if len(parts) > 3 else "line"
+                            alt = await _is_alternate_screen(tmux_prefix, session_name)
                             if direction == "up":
-                                count = parts[2] if len(parts) > 2 else "3"
-                                # Enter copy-mode with auto-exit (-e), then scroll up
-                                cm = await asyncio.create_subprocess_exec(
-                                    *tmux_prefix, "copy-mode", "-e",
-                                    "-t", session_name,
-                                    stdout=asyncio.subprocess.DEVNULL,
-                                    stderr=asyncio.subprocess.DEVNULL,
-                                )
-                                await cm.wait()
-                                su = await asyncio.create_subprocess_exec(
-                                    *tmux_prefix, "send-keys",
-                                    "-t", session_name,
-                                    "-X", "-N", count, "scroll-up",
-                                    stdout=asyncio.subprocess.DEVNULL,
-                                    stderr=asyncio.subprocess.DEVNULL,
-                                )
-                                await su.wait()
+                                if alt:
+                                    # Forward to the app running in alternate screen
+                                    key = "PPage" if scroll_type == "page" else "Up"
+                                    args = [*tmux_prefix, "send-keys", "-t", session_name]
+                                    if scroll_type != "page":
+                                        args += ["-N", count]
+                                    args.append(key)
+                                    su = await asyncio.create_subprocess_exec(
+                                        *args,
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await su.wait()
+                                else:
+                                    # Enter copy-mode with auto-exit (-e), then scroll up
+                                    cm = await asyncio.create_subprocess_exec(
+                                        *tmux_prefix, "copy-mode", "-e",
+                                        "-t", session_name,
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await cm.wait()
+                                    su = await asyncio.create_subprocess_exec(
+                                        *tmux_prefix, "send-keys",
+                                        "-t", session_name,
+                                        "-X", "-N", count, "scroll-up",
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await su.wait()
                             elif direction == "down":
-                                count = parts[2] if len(parts) > 2 else "3"
-                                sd = await asyncio.create_subprocess_exec(
-                                    *tmux_prefix, "send-keys",
-                                    "-t", session_name,
-                                    "-X", "-N", count, "scroll-down",
-                                    stdout=asyncio.subprocess.DEVNULL,
-                                    stderr=asyncio.subprocess.DEVNULL,
-                                )
-                                await sd.wait()
+                                if alt:
+                                    key = "NPage" if scroll_type == "page" else "Down"
+                                    args = [*tmux_prefix, "send-keys", "-t", session_name]
+                                    if scroll_type != "page":
+                                        args += ["-N", count]
+                                    args.append(key)
+                                    sd = await asyncio.create_subprocess_exec(
+                                        *args,
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await sd.wait()
+                                else:
+                                    sd = await asyncio.create_subprocess_exec(
+                                        *tmux_prefix, "send-keys",
+                                        "-t", session_name,
+                                        "-X", "-N", count, "scroll-down",
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await sd.wait()
                             elif direction == "exit":
-                                ex = await asyncio.create_subprocess_exec(
-                                    *tmux_prefix, "send-keys",
-                                    "-t", session_name,
-                                    "-X", "cancel",
-                                    stdout=asyncio.subprocess.DEVNULL,
-                                    stderr=asyncio.subprocess.DEVNULL,
-                                )
-                                await ex.wait()
+                                if not alt:
+                                    ex = await asyncio.create_subprocess_exec(
+                                        *tmux_prefix, "send-keys",
+                                        "-t", session_name,
+                                        "-X", "cancel",
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                    )
+                                    await ex.wait()
                         except (ValueError, OSError) as e:
                             logger.debug("%s scroll failed: %s", label, e)
                         continue

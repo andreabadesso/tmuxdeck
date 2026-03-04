@@ -285,9 +285,9 @@ function setupWebSocketTerminal(
         const pageLines = term.rows;
         if (e.key === 'PageUp') {
           inScrollMode.current = true;
-          ws.send(`SCROLL:up:${pageLines}`);
+          ws.send(`SCROLL:up:${pageLines}:page`);
         } else {
-          ws.send(`SCROLL:down:${pageLines}`);
+          ws.send(`SCROLL:down:${pageLines}:page`);
         }
       }
       return false;
@@ -297,9 +297,9 @@ function setupWebSocketTerminal(
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
         if (e.key === 'ArrowUp') {
-          ws.send('SCROLL:up:1');
+          ws.send('SCROLL:up:1:line');
         } else {
-          ws.send('SCROLL:down:1');
+          ws.send('SCROLL:down:1:line');
         }
       }
       return false;
@@ -713,10 +713,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (e.deltaY < 0) {
         // Scroll up
         inScrollModeRef.current.current = true;
-        ws.send(`SCROLL:up:${lines}`);
+        ws.send(`SCROLL:up:${lines}:line`);
       } else {
         // Scroll down
-        ws.send(`SCROLL:down:${lines}`);
+        ws.send(`SCROLL:down:${lines}:line`);
       }
     };
 
@@ -804,9 +804,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const lines = Math.max(1, Math.round(Math.abs(deltaY) / PX_PER_LINE));
       if (deltaY > 0) {
         inScrollModeRef.current.current = true;
-        ws.send(`SCROLL:up:${lines}`);
+        ws.send(`SCROLL:up:${lines}:line`);
       } else if (deltaY < 0) {
-        ws.send(`SCROLL:down:${lines}`);
+        ws.send(`SCROLL:down:${lines}:line`);
       }
     };
 
@@ -829,9 +829,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const lines = Math.max(1, Math.round(Math.abs(velocity * TOUCH_THROTTLE_MS) / PX_PER_LINE));
         if (velocity > 0) {
           inScrollModeRef.current.current = true;
-          ws.send(`SCROLL:up:${lines}`);
+          ws.send(`SCROLL:up:${lines}:line`);
         } else {
-          ws.send(`SCROLL:down:${lines}`);
+          ws.send(`SCROLL:down:${lines}:line`);
         }
         momentumRafId = requestAnimationFrame(decay);
       };
@@ -938,7 +938,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   const sendVirtualKey = useCallback((data: string, isScroll?: 'up' | 'down') => {
     if (isScroll && inScrollModeRef.current.current) {
-      sendToWs(`SCROLL:${isScroll}:1`);
+      sendToWs(`SCROLL:${isScroll}:1:line`);
     } else {
       sendToWs(data);
     }
