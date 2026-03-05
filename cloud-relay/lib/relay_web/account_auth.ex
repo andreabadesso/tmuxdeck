@@ -27,6 +27,48 @@ defmodule RelayWeb.AccountAuth do
   @session_reissue_age_in_days 7
 
   @doc """
+  Handles mounting and authenticating the `current_scope` in LiveViews.
+
+  ## `on_mount` arguments
+
+    * `:mount_current_scope` - assigns `current_scope` to socket from session,
+      or `nil` if there is no session.
+
+    * `:require_authenticated` - authenticates the user from the session,
+      and redirects to the login page if there's no logged user.
+
+  """
+  def on_mount(:mount_current_scope, _params, session, socket) do
+    {:cont, mount_current_scope(socket, session)}
+  end
+
+  def on_mount(:require_authenticated, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if socket.assigns.current_scope && socket.assigns.current_scope.account do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+        |> Phoenix.LiveView.redirect(to: ~p"/accounts/log-in")
+
+      {:halt, socket}
+    end
+  end
+
+  defp mount_current_scope(socket, session) do
+    Phoenix.Component.assign_new(socket, :current_scope, fn ->
+      if token = session["account_token"] do
+        case Accounts.get_account_by_session_token(token) do
+          {account, _inserted_at} -> Relay.Accounts.Scope.for_account(account)
+          nil -> nil
+        end
+      end
+    end)
+  end
+
+  @doc """
   Logs the account in.
 
   Redirects to the session's `:account_return_to` path
@@ -194,7 +236,7 @@ defmodule RelayWeb.AccountAuth do
     end
   end
 
-  defp signed_in_path(_conn), do: ~p"/"
+  defp signed_in_path(_conn), do: ~p"/dashboard"
 
   @doc """
   Plug for routes that require the account to be authenticated.

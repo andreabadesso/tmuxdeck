@@ -3,27 +3,19 @@ defmodule RelayWeb.AccountRegistrationController do
 
   alias Relay.Accounts
   alias Relay.Accounts.Account
+  alias RelayWeb.AccountAuth
 
   def new(conn, _params) do
-    changeset = Accounts.change_account_email(%Account{})
+    changeset = Accounts.change_account_registration(%Account{})
     render(conn, :new, changeset: changeset)
   end
 
   def create(conn, %{"account" => account_params}) do
     case Accounts.register_account(account_params) do
       {:ok, account} ->
-        {:ok, _} =
-          Accounts.deliver_login_instructions(
-            account,
-            &url(~p"/accounts/log-in/#{&1}")
-          )
-
         conn
-        |> put_flash(
-          :info,
-          "An email was sent to #{account.email}, please access it to confirm your account."
-        )
-        |> redirect(to: ~p"/accounts/log-in")
+        |> put_flash(:info, "Account created successfully.")
+        |> AccountAuth.log_in_account(account, account_params)
 
       {:error, %Ecto.Changeset{} = changeset} ->
         render(conn, :new, changeset: changeset)

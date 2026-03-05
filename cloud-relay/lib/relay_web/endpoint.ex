@@ -12,13 +12,6 @@ defmodule RelayWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
-  # Tunnel WebSocket for TmuxDeck instances to connect
-  socket "/ws/tunnel", RelayWeb.TunnelSocket,
-    websocket: [
-      timeout: :infinity,
-      compress: false
-    ]
-
   plug Plug.Static,
     at: "/",
     from: :relay,

@@ -20,6 +20,11 @@ class AppConfig(BaseSettings):
     login_backoff_base_seconds: int = 2
     login_lockout_threshold_seconds: int = 60
 
+    # Cloud relay
+    relay_url: str = ""   # e.g. wss://relay.tmuxdeck.io/ws/tunnel
+    relay_token: str = "" # tdck_... token from the relay dashboard
+    relay_backend_url: str = "http://127.0.0.1:8000"  # local backend URL the relay client proxies to
+
     # OpenAI (voice agent)
     openai_api_key: str = ""
     chat_agent_model: str = "gpt-4o"

@@ -23,6 +23,10 @@ defmodule RelayWeb.Router do
     get "/", PageController, :home
   end
 
+  scope "/ws", RelayWeb do
+    get "/tunnel", TunnelController, :upgrade
+  end
+
   # Enable LiveDashboard in development
   if Application.compile_env(:relay, :dev_routes) do
     import Phoenix.LiveDashboard.Router
@@ -50,9 +54,12 @@ defmodule RelayWeb.Router do
     put "/accounts/settings", AccountSettingsController, :update
     get "/accounts/settings/confirm-email/:token", AccountSettingsController, :confirm_email
 
-    live "/dashboard", DashboardLive
-    live "/instances/new", InstanceNewLive
-    live "/instances/:id", InstanceShowLive
+    live_session :require_authenticated,
+      on_mount: [{RelayWeb.AccountAuth, :require_authenticated}] do
+      live "/dashboard", DashboardLive
+      live "/instances/new", InstanceNewLive
+      live "/instances/:id", InstanceShowLive
+    end
   end
 
   scope "/", RelayWeb do

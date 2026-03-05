@@ -74,9 +74,13 @@ defmodule Relay.Accounts do
       {:error, %Ecto.Changeset{}}
 
   """
+  def change_account_registration(account, attrs \\ %{}, opts \\ []) do
+    Account.registration_changeset(account, attrs, opts)
+  end
+
   def register_account(attrs) do
     %Account{}
-    |> Account.email_changeset(attrs)
+    |> Account.registration_changeset(attrs)
     |> Repo.insert()
   end
 

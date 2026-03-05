@@ -9,9 +9,9 @@ export default defineConfig({
     allowedHosts: true,
     cors: true,
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': 'http://localhost:8001',
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: 'ws://localhost:8001',
         ws: true,
         configure: (proxy) => {
           proxy.on('error', () => {});

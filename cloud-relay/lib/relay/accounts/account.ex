@@ -111,6 +111,21 @@ defmodule Relay.Accounts.Account do
   end
 
   @doc """
+  A account changeset for registration (email + password, auto-confirmed).
+  """
+  def registration_changeset(account, attrs, opts \\ []) do
+    account
+    |> cast(attrs, [:email, :password])
+    |> validate_required([:email, :password])
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/, message: "must have the @ sign and no spaces")
+    |> validate_length(:email, max: 160)
+    |> unsafe_validate_unique(:email, Relay.Repo)
+    |> unique_constraint(:email)
+    |> validate_password(opts)
+    |> put_change(:confirmed_at, DateTime.utc_now(:second))
+  end
+
+  @doc """
   Confirms the account by setting `confirmed_at`.
   """
   def confirm_changeset(account) do
