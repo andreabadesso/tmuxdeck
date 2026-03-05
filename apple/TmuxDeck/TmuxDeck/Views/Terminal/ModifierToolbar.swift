@@ -4,71 +4,68 @@ struct ModifierToolbar: View {
     let viewModel: TerminalViewModel
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                // Escape
-                ToolbarKey("Esc") {
-                    viewModel.sendModifiedKey([0x1B])
-                }
-
-                // Tab
-                ToolbarKey("Tab") {
-                    viewModel.sendModifiedKey([0x09])
-                }
-
-                // Ctrl+C
-                ToolbarKey("^C") {
-                    viewModel.sendInput(Data([0x03]))
-                }
-
-                Divider().frame(height: 24)
-
-                // Modifier toggles
-                ModifierToggle("Ctrl", isActive: Binding(
-                    get: { viewModel.ctrlActive },
-                    set: { viewModel.ctrlActive = $0 }
-                ))
-
-                ModifierToggle("Alt", isActive: Binding(
-                    get: { viewModel.altActive },
-                    set: { viewModel.altActive = $0 }
-                ))
-
-                ModifierToggle("Shift", isActive: Binding(
-                    get: { viewModel.shiftActive },
-                    set: { viewModel.shiftActive = $0 }
-                ))
-
-                Divider().frame(height: 24)
-
-                // Arrow keys
-                ToolbarKey(systemImage: "arrow.up") {
-                    viewModel.sendModifiedKey([0x1B, 0x5B, 0x41])
-                }
-                ToolbarKey(systemImage: "arrow.down") {
-                    viewModel.sendModifiedKey([0x1B, 0x5B, 0x42])
-                }
-                ToolbarKey(systemImage: "arrow.left") {
-                    viewModel.sendModifiedKey([0x1B, 0x5B, 0x44])
-                }
-                ToolbarKey(systemImage: "arrow.right") {
-                    viewModel.sendModifiedKey([0x1B, 0x5B, 0x43])
-                }
-
-                Divider().frame(height: 24)
-
-                // Copy / Paste
-                ToolbarKey(systemImage: "doc.on.doc") {
-                    copyTerminalSelection()
-                }
-                ToolbarKey(systemImage: "doc.on.clipboard") {
-                    pasteFromClipboard()
-                }
+        HStack(spacing: 6) {
+            // Escape
+            ToolbarKey("Esc") {
+                viewModel.sendModifiedKey([0x1B])
             }
-            .padding(.horizontal, 8)
+
+            // Tab
+            ToolbarKey("Tab") {
+                viewModel.sendModifiedKey([0x09])
+            }
+
+            // Ctrl+C
+            ToolbarKey("^C") {
+                viewModel.sendInput(Data([0x03]))
+            }
+
+            Divider().frame(height: 24)
+
+            // Modifier toggles
+            ModifierToggle("Ctrl", isActive: Binding(
+                get: { viewModel.ctrlActive },
+                set: { viewModel.ctrlActive = $0 }
+            ))
+
+            ModifierToggle("Alt", isActive: Binding(
+                get: { viewModel.altActive },
+                set: { viewModel.altActive = $0 }
+            ))
+
+            ModifierToggle("Shift", isActive: Binding(
+                get: { viewModel.shiftActive },
+                set: { viewModel.shiftActive = $0 }
+            ))
+
+            Divider().frame(height: 24)
+
+            // Arrow keys
+            ToolbarKey(systemImage: "arrow.up") {
+                viewModel.sendModifiedKey([0x1B, 0x5B, 0x41])
+            }
+            ToolbarKey(systemImage: "arrow.down") {
+                viewModel.sendModifiedKey([0x1B, 0x5B, 0x42])
+            }
+            ToolbarKey(systemImage: "arrow.left") {
+                viewModel.sendModifiedKey([0x1B, 0x5B, 0x44])
+            }
+            ToolbarKey(systemImage: "arrow.right") {
+                viewModel.sendModifiedKey([0x1B, 0x5B, 0x43])
+            }
+
+            Divider().frame(height: 24)
+
+            // Copy / Paste
+            ToolbarKey(systemImage: "doc.on.doc") {
+                copyTerminalSelection()
+            }
+            ToolbarKey(systemImage: "doc.on.clipboard") {
+                pasteFromClipboard()
+            }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 40)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: 40)
         .background(.ultraThinMaterial)
     }
 
