@@ -453,7 +453,7 @@ export function SessionItem({
           if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
           clickTimerRef.current = setTimeout(() => {
             clickTimerRef.current = null;
-            setExpanded((prev) => !prev);
+            setExpanded(!expanded);
           }, 250);
         }}
         onDragOver={handleSessionHeaderDragOver}
