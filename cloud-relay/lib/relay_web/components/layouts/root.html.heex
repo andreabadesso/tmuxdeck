@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title default="TmuxDeck Relay">
+      {assigns[:page_title]}
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+  </head>
+  <body class="bg-zinc-900 text-white min-h-screen">
+    <nav class="border-b border-zinc-800 px-4 sm:px-6 lg:px-8 py-3">
+      <div class="max-w-4xl mx-auto flex items-center justify-between">
+        <.link href={~p"/"} class="text-lg font-bold text-white hover:text-zinc-300">
+          TmuxDeck Relay
+        </.link>
+        <ul class="flex items-center gap-4 text-sm">
+          <%= if @current_scope do %>
+            <li class="text-zinc-400">{@current_scope.account.email}</li>
+            <li>
+              <.link href={~p"/dashboard"} class="text-zinc-300 hover:text-white">Dashboard</.link>
+            </li>
+            <li>
+              <.link href={~p"/accounts/settings"} class="text-zinc-300 hover:text-white">Settings</.link>
+            </li>
+            <li>
+              <.link href={~p"/accounts/log-out"} method="delete" class="text-zinc-400 hover:text-white">Log out</.link>
+            </li>
+          <% else %>
+            <li>
+              <.link href={~p"/accounts/register"} class="text-zinc-300 hover:text-white">Register</.link>
+            </li>
+            <li>
+              <.link href={~p"/accounts/log-in"} class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Log in</.link>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </nav>
+    <main class="px-4 sm:px-6 lg:px-8 py-8">
+      {@inner_content}
+    </main>
+  </body>
+</html>

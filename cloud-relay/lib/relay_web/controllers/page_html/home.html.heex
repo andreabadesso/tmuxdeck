@@ -1,0 +1,30 @@
+<div class="max-w-2xl mx-auto text-center py-20">
+  <h1 class="text-4xl font-bold mb-4">TmuxDeck Cloud Relay</h1>
+  <p class="text-lg text-zinc-400 mb-8">
+    Access your TmuxDeck instances from anywhere. No port forwarding, no VPN.
+  </p>
+
+  <div class="flex justify-center gap-4">
+    <.link href={~p"/accounts/register"} class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-lg transition">
+      Get Started
+    </.link>
+    <.link href={~p"/accounts/log-in"} class="bg-zinc-700 hover:bg-zinc-600 text-white px-6 py-3 rounded-lg text-lg transition">
+      Log In
+    </.link>
+  </div>
+
+  <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
+      <h3 class="font-semibold text-lg mb-2">1. Create Instance</h3>
+      <p class="text-zinc-400 text-sm">Register and create a new instance in the dashboard. You'll get a token.</p>
+    </div>
+    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
+      <h3 class="font-semibold text-lg mb-2">2. Configure TmuxDeck</h3>
+      <p class="text-zinc-400 text-sm">Set RELAY_URL and RELAY_TOKEN in your TmuxDeck environment.</p>
+    </div>
+    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
+      <h3 class="font-semibold text-lg mb-2">3. Connect</h3>
+      <p class="text-zinc-400 text-sm">Access your TmuxDeck from anywhere via the relay URL. That's it.</p>
+    </div>
+  </div>
+</div>
