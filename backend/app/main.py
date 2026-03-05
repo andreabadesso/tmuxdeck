@@ -99,6 +99,14 @@ async def lifespan(app: FastAPI):
     # Start Telegram bot
     telegram_bot = await _start_telegram_bot()
 
+    # Start cloud relay client if configured
+    relay_client = None
+    if config.relay_url and config.relay_token:
+        from .services.relay_client import RelayClient
+        relay_client = RelayClient(config.relay_url, config.relay_token, config.relay_backend_url)
+        asyncio.create_task(relay_client.connect_with_retry(), name="relay-client")
+        logger.info("Relay client started → %s", config.relay_url)
+
     logger.info("TmuxDeck backend started")
     yield
     logger.info("TmuxDeck backend shutting down")
