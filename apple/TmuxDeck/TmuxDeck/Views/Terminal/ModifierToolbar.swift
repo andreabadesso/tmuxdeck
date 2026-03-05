@@ -67,6 +67,7 @@ struct ModifierToolbar: View {
             }
             .padding(.horizontal, 8)
         }
+        .frame(maxWidth: .infinity)
         .frame(height: 40)
         .background(.ultraThinMaterial)
     }

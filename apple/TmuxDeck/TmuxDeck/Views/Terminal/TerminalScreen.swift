@@ -29,10 +29,10 @@ struct TerminalScreen: View {
                 }
 
                 ModifierToolbar(viewModel: vm)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 ZStack {
                     SwiftTerminalView(viewModel: vm, keyboardActive: inputMode == .keyboard, showQuickActions: $showQuickActions)
-                        .clipped()
                         .padding(.bottom, 60)
                         .onDisappear {
                             vm.disconnect()
