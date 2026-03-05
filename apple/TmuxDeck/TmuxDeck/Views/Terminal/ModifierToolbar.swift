@@ -72,11 +72,10 @@ struct ModifierToolbar: View {
     }
 
     private func copyTerminalSelection() {
-        if let termView = viewModel.terminalViewRef {
-            let selection = termView.getSelection()
-            if !selection.isEmpty {
-                UIPasteboard.general.string = selection
-            }
+        if let termView = viewModel.terminalViewRef,
+           let selection = termView.getSelection(),
+           !selection.isEmpty {
+            UIPasteboard.general.string = selection
         }
     }
 
