@@ -72,6 +72,19 @@ struct SwiftTerminalView: UIViewRepresentable {
             }
         }
 
+        // Detect frame changes and force a resize so tmux gets the correct col/row count.
+        // This handles the case where SwiftUI layout changes (e.g. toolbar appearing)
+        // after the initial connection, or when the view first gets its real frame.
+        let currentBounds = uiView.bounds.size
+        if currentBounds != context.coordinator.lastBoundsSize && currentBounds.width > 0 && currentBounds.height > 0 {
+            context.coordinator.lastBoundsSize = currentBounds
+            // Schedule resize after layout pass completes
+            DispatchQueue.main.async {
+                let cols = uiView.getTerminal().cols
+                let rows = uiView.getTerminal().rows
+                viewModel.sendResize(cols: cols, rows: rows)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -83,6 +96,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         weak var terminalView: TerminalView?
         @Binding var showQuickActions: Bool
         var keyboardAllowed = false
+        var lastBoundsSize: CGSize = .zero
         private var keyboardObserver: NSObjectProtocol?
 
         init(viewModel: TerminalViewModel, showQuickActions: Binding<Bool>) {
