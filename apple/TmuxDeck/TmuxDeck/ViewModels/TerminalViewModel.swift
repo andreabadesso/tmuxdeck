@@ -42,6 +42,9 @@ final class TerminalViewModel {
     private let apiClient: APIClient
     private let preferences: UserPreferences
     private var hasConnected = false
+    private var resizeWorkItem: DispatchWorkItem?
+    private var lastSentCols: Int = 0
+    private var lastSentRows: Int = 0
 
     let containerId: String
     let sessionName: String
@@ -135,7 +138,18 @@ final class TerminalViewModel {
     }
 
     func sendResize(cols: Int, rows: Int) {
-        connection.sendResize(cols: cols, rows: rows)
+        // Debounce resize to let SwiftUI layout settle before telling tmux
+        resizeWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            // Only send if dimensions actually changed
+            guard cols != self.lastSentCols || rows != self.lastSentRows else { return }
+            self.lastSentCols = cols
+            self.lastSentRows = rows
+            self.connection.sendResize(cols: cols, rows: rows)
+        }
+        resizeWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     func switchWindow(to index: Int) {
