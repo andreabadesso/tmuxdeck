@@ -32,6 +32,7 @@ struct TerminalScreen: View {
 
                 ZStack {
                     SwiftTerminalView(viewModel: vm, keyboardActive: inputMode == .keyboard, showQuickActions: $showQuickActions)
+                        .clipped()
                         .padding(.bottom, 60)
                         .onDisappear {
                             vm.disconnect()

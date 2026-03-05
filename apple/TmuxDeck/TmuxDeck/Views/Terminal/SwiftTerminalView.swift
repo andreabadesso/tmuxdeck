@@ -28,10 +28,13 @@ struct SwiftTerminalView: UIViewRepresentable {
         // Remove SwiftTerm's built-in keyboard accessory bar (F1-F10, arrows, etc.)
         terminalView.inputAccessoryView = nil
 
-        // Disable pinch-to-zoom (UIScrollView built-in)
+        // Disable pinch-to-zoom and horizontal scrolling
         terminalView.minimumZoomScale = 1.0
         terminalView.maximumZoomScale = 1.0
         terminalView.pinchGestureRecognizer?.isEnabled = false
+        terminalView.clipsToBounds = true
+        terminalView.showsHorizontalScrollIndicator = false
+        terminalView.bounces = false
 
         // Two-finger swipe down to open scrollback history
         let swipeDown = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleScrollbackSwipe))
