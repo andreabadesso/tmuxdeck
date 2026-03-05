@@ -658,7 +658,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               addToastRef.current({
                 title: 'Tap to copy to clipboard',
                 message: chars,
-                onClick: () => { copyToClipboard(text); },
+                onClick: () => {
+                  copyToClipboard(text).then(() => {
+                    addToastRef.current({
+                      title: 'Copied to clipboard',
+                      message: chars,
+                    });
+                  });
+                },
               });
             } else {
               addToastRef.current({
