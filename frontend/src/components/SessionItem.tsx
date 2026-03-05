@@ -211,6 +211,13 @@ export function SessionItem({
   const [confirmingKill, setConfirmingKill] = useState(false);
   const [hooksHintWindow, setHooksHintWindow] = useState<number | null>(null);
   const hooksHintAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    };
+  }, []);
 
   const closeHooksHint = useCallback(() => setHooksHintWindow(null), []);
 
@@ -431,6 +438,7 @@ export function SessionItem({
 
       {/* Session row (draggable + drop target) */}
       <div
+        data-selected={isFoldedSelected || undefined}
         draggable={!renaming}
         onDragStart={handleSessionDragStart}
         onDragEnd={handleSessionDragEnd}
@@ -441,7 +449,13 @@ export function SessionItem({
         } ${
           sessionHeaderDragOver ? 'bg-blue-900/30 ring-1 ring-blue-500/50' : ''
         }`}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = setTimeout(() => {
+            clickTimerRef.current = null;
+            setExpanded((prev) => !prev);
+          }, 250);
+        }}
         onDragOver={handleSessionHeaderDragOver}
         onDragLeave={handleSessionHeaderDragLeave}
         onDrop={handleSessionHeaderDrop}
@@ -467,6 +481,10 @@ export function SessionItem({
             className="flex-1 text-xs truncate"
             onDoubleClick={(e) => {
               e.stopPropagation();
+              if (clickTimerRef.current) {
+                clearTimeout(clickTimerRef.current);
+                clickTimerRef.current = null;
+              }
               setRenameValue(session.name);
               setRenaming(true);
             }}
@@ -515,6 +533,7 @@ export function SessionItem({
             return (
               <div
                 key={win.index}
+                data-selected={isSelected || undefined}
                 draggable
                 onDragStart={(e) => handleWindowDragStart(e, win.index)}
                 onDragEnd={handleWindowDragEnd}

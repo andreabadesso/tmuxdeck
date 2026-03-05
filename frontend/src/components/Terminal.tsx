@@ -279,6 +279,13 @@ function setupWebSocketTerminal(
       }
     }
 
+    // iPadOS treats ESC as "Home" button with external keyboards.
+    // Prevent that and let xterm.js handle the key normally.
+    if (isIOS && e.key === 'Escape') {
+      e.preventDefault();
+      return true; // let xterm.js process ESC
+    }
+
     if (e.key === 'c' || e.key === 'C') {
       const shouldCopy = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldCopy && term.hasSelection()) {
@@ -649,8 +656,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           copyToClipboard(text).then((result) => {
             if (result.startsWith('Copy failed')) {
               addToastRef.current({
-                title: 'Copied (use Cmd+V to paste)',
+                title: 'Tap to copy to clipboard',
                 message: chars,
+                onClick: () => { copyToClipboard(text); },
               });
             } else {
               addToastRef.current({

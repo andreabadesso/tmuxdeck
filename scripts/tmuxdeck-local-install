@@ -1,0 +1,39 @@
+#!/bin/sh
+# tmuxdeck-local-install — Install tmuxdeck scripts to ~/.tmuxdeck/bin on the host.
+# Safe to run multiple times (idempotent).
+
+set -e
+
+INSTALL_DIR="$HOME/.tmuxdeck/bin"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PATH_LINE='export PATH="$HOME/.tmuxdeck/bin:$PATH"'
+
+# --- Create install directory ---
+mkdir -p "$INSTALL_DIR"
+
+# --- Copy all tmuxdeck-* scripts ---
+count=0
+for script in "$SCRIPT_DIR"/tmuxdeck-*; do
+    [ -f "$script" ] || continue
+    name="$(basename "$script")"
+    cp -f "$script" "$INSTALL_DIR/$name"
+    chmod +x "$INSTALL_DIR/$name"
+    count=$((count + 1))
+done
+
+echo "Installed $count scripts to $INSTALL_DIR"
+
+# --- Add to PATH in shell rc files ---
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] || continue
+    if ! grep -qF '.tmuxdeck/bin' "$rc"; then
+        printf '\n# tmuxdeck\n%s\n' "$PATH_LINE" >> "$rc"
+        echo "Added PATH entry to $rc"
+    else
+        echo "PATH entry already in $rc (skipped)"
+    fi
+done
+
+echo ""
+echo "Done. Reload your shell or run:"
+echo "  source ~/.bashrc   # (or ~/.zshrc)"

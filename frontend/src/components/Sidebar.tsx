@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -40,9 +40,18 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
   const setSectionsCollapsed = (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
     setSectionsCollapsedRaw((prev) => { const next = updater(prev); saveSectionsCollapsed(next); return next; });
   };
+  const scrollRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const isMainPage = location.pathname === '/';
+
+  // Auto-scroll sidebar to keep keyboard-selected item visible
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || !selectedSession) return;
+    const el = container.querySelector('[data-selected="true"]') as HTMLElement | null;
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [selectedSession]);
 
   // When not on main page, clicking a session window navigates to main with selection
   const handleSelectSession = onSelectSession ?? ((containerId: string, sessionName: string, windowIndex: number) => {
@@ -154,7 +163,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
           {error && (
             <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-red-900/30 border border-red-800/50">
               <div className="flex items-center gap-2 text-red-400 text-xs font-medium">

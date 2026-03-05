@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException
 from ..schemas import CreateSessionRequest, CreateWindowRequest, MoveWindowRequest, RenameSessionRequest, SwapWindowsRequest, TmuxSessionResponse, TmuxWindowResponse
 from ..services.bridge_manager import BridgeManager, is_bridge
 from ..services.debug_log import DebugLog
-from ..services.tmux_manager import TmuxManager
+from ..services.tmux_manager import TmuxManager, make_session_id
+from ..store import get_session_order, save_session_order
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/containers/{container_id}/sessions", tags=["sessions"])
@@ -70,6 +71,15 @@ async def rename_session(container_id: str, session_id: str, req: RenameSessionR
         await tm.rename_session(container_id, old_name, req.name)
     except Exception as e:
         raise HTTPException(500, f"Failed to rename session: {e}") from None
+
+    # Update saved session order so the renamed session keeps its position
+    old_sid = make_session_id(container_id, old_name)
+    new_sid = make_session_id(container_id, req.name)
+    order = get_session_order(container_id)
+    if old_sid in order:
+        order[order.index(old_sid)] = new_sid
+        save_session_order(container_id, order)
+
     await _refresh_bridge_sessions(container_id)
 
 

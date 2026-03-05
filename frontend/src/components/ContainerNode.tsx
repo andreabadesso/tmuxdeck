@@ -192,7 +192,7 @@ export function ContainerNode({
         />
       )}
 
-      <div className={`flex items-center group px-2 py-0.5 ${isHighlightedFoldedContainer ? 'bg-blue-900/40 rounded' : ''}`}>
+      <div data-selected={isHighlightedFoldedContainer || undefined} className={`flex items-center group px-2 py-0.5 ${isHighlightedFoldedContainer ? 'bg-blue-900/40 rounded' : ''}`}>
         {isHost ? (
           <span className="p-0.5 shrink-0 text-blue-400 cursor-pointer" onClick={() => onToggleSection?.()}>
             <Monitor size={14} />
