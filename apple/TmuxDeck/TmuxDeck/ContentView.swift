@@ -184,8 +184,7 @@ struct AdaptiveContainerView: View {
                                     preferences: appState.preferences,
                                     container: dest.container,
                                     session: dest.session,
-                                    isFullscreen: $isFullscreen,
-                                    terminalPool: appState.terminalPool
+                                    isFullscreen: $isFullscreen
                                 )
                             }
                         }
