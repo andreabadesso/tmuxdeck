@@ -28,9 +28,6 @@ struct TerminalScreen: View {
                     )
                 }
 
-                ModifierToolbar(viewModel: vm)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 ZStack {
                     SwiftTerminalView(viewModel: vm, keyboardActive: inputMode == .keyboard, showQuickActions: $showQuickActions)
                         .padding(.bottom, 60)
@@ -103,6 +100,9 @@ struct TerminalScreen: View {
                         inputMode: $inputMode
                     )
 
+                }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    ModifierToolbar(viewModel: vm)
                 }
 
                 if let error = vm.error {
