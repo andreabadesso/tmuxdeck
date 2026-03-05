@@ -28,6 +28,8 @@ struct TerminalScreen: View {
                     )
                 }
 
+                ModifierToolbar(viewModel: vm)
+
                 ZStack {
                     SwiftTerminalView(viewModel: vm, keyboardActive: inputMode == .keyboard, showQuickActions: $showQuickActions)
                         .padding(.bottom, 60)

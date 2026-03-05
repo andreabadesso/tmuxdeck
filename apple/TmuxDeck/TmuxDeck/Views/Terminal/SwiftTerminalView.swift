@@ -115,7 +115,11 @@ struct SwiftTerminalView: UIViewRepresentable {
             if viewModel.showingScrollback {
                 viewModel.dismissScrollback()
             }
-            viewModel.sendInput(Data(data))
+            if viewModel.ctrlActive || viewModel.shiftActive || viewModel.altActive {
+                viewModel.sendModifiedKey(Array(data))
+            } else {
+                viewModel.sendInput(Data(data))
+            }
         }
 
         func scrolled(source: TerminalView, position: Double) {}

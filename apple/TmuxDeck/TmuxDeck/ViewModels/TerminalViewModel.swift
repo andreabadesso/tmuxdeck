@@ -20,6 +20,11 @@ final class TerminalViewModel {
     var activePaneIndex: Int = 0
     var isZoomed = false
 
+    // Modifier key toggles for on-screen toolbar
+    var ctrlActive = false
+    var shiftActive = false
+    var altActive = false
+
     /// Set by SwiftTerminalView to feed incoming bytes into the TerminalView
     var feedHandler: (([UInt8]) -> Void)?
 
@@ -92,6 +97,41 @@ final class TerminalViewModel {
 
     func sendInput(_ data: Data) {
         connection.sendBinary(data)
+    }
+
+    /// Apply active modifiers to raw key bytes and send, then clear one-shot modifiers
+    func sendModifiedKey(_ bytes: [UInt8]) {
+        var result = bytes
+
+        // For single printable characters, apply Ctrl modifier (maps a-z to 0x01-0x1A)
+        if ctrlActive && bytes.count == 1 {
+            let b = bytes[0]
+            if b >= 0x61 && b <= 0x7A { // a-z
+                result = [b - 0x60]
+            } else if b >= 0x41 && b <= 0x5A { // A-Z
+                result = [b - 0x40]
+            }
+        }
+
+        // For arrow keys (ESC [ A/B/C/D), apply shift/alt/ctrl as CSI parameters
+        if bytes.count == 3 && bytes[0] == 0x1B && bytes[1] == 0x5B &&
+           (bytes[2] >= 0x41 && bytes[2] <= 0x44) {
+            var modifier = 1
+            if shiftActive { modifier += 1 }
+            if altActive { modifier += 2 }
+            if ctrlActive { modifier += 4 }
+            if modifier > 1 {
+                // ESC [ 1 ; <modifier> <key>
+                result = [0x1B, 0x5B, 0x31, 0x3B, UInt8(0x30 + modifier), bytes[2]]
+            }
+        }
+
+        connection.sendBinary(Data(result))
+
+        // Clear modifiers after use (one-shot behavior)
+        ctrlActive = false
+        shiftActive = false
+        altActive = false
     }
 
     func sendResize(cols: Int, rows: Int) {
