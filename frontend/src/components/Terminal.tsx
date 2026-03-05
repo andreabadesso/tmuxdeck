@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
+import { useToast } from './ToastContainer';
 import '@xterm/xterm/css/xterm.css';
 
 const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
@@ -248,6 +249,8 @@ function setupWebSocketTerminal(
 
   // Intercept Shift+Enter and copy/paste shortcuts
   const isMac = navigator.platform.toUpperCase().includes('MAC');
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.key === 'Enter' && e.shiftKey) {
       if (e.type === 'keydown') {
@@ -261,6 +264,21 @@ function setupWebSocketTerminal(
 
     if (e.type !== 'keydown') return true;
 
+    // iPad Safari with Bluetooth keyboard intercepts Ctrl+key as system
+    // shortcuts (e.g. Ctrl+C → Copy). Prevent that and send the control
+    // character directly to the terminal.
+    if (isIOS && e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+      const ch = e.key.toLowerCase();
+      if (ch >= 'a' && ch <= 'z') {
+        e.preventDefault();
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(String.fromCharCode(ch.charCodeAt(0) - 96));
+        }
+        return false;
+      }
+    }
+
     if (e.key === 'c' || e.key === 'C') {
       const shouldCopy = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldCopy && term.hasSelection()) {
@@ -272,9 +290,16 @@ function setupWebSocketTerminal(
     if (e.key === 'v' || e.key === 'V') {
       const shouldPaste = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldPaste) {
+        // On iOS/iPadOS, clipboard.readText() is restricted by Safari.
+        // Let the native paste event flow to handlePaste instead.
+        if (isIOS) return true;
         navigator.clipboard.readText().then((text) => {
           if (text) term.paste(text);
-        }).catch(() => { /* Safari clipboard permission denied */ });
+          else if (osc52TextRef.current) term.paste(osc52TextRef.current);
+        }).catch(() => {
+          // Clipboard permission denied — use stored OSC 52 text if available
+          if (osc52TextRef.current) term.paste(osc52TextRef.current);
+        });
         return false;
       }
     }
@@ -496,6 +521,9 @@ async function uploadAndInject(
 }
 
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile }, ref) {
+  const { addToast } = useToast();
+  const addToastRef = useRef(addToast);
+  addToastRef.current = addToast;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -520,6 +548,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const pasteInputRef = useRef<HTMLInputElement>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const selectionTextRef = useRef('');
+  const osc52TextRef = useRef<string | null>(null);
   const selectModeRef = useRef(false);
   selectModeRef.current = selectMode;
   const selectStartRef = useRef<{ col: number; row: number } | null>(null);
@@ -615,7 +644,21 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (b64) {
         try {
           const text = atob(b64);
-          copyToClipboard(text);
+          osc52TextRef.current = text;
+          const chars = `${text.length} character${text.length !== 1 ? 's' : ''}`;
+          copyToClipboard(text).then((result) => {
+            if (result.startsWith('Copy failed')) {
+              addToastRef.current({
+                title: 'Copied (use Cmd+V to paste)',
+                message: chars,
+              });
+            } else {
+              addToastRef.current({
+                title: 'Copied to clipboard',
+                message: chars,
+              });
+            }
+          });
         } catch { /* ignore decode errors */ }
       }
       return true;
@@ -1033,7 +1076,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         return;
       }
     } catch { /* clipboard permission denied — fall through */ }
-    // Fallback: show an input field where the user can native-paste
+    // Fallback: use stored OSC 52 text if available
+    if (osc52TextRef.current) {
+      xtermRef.current?.paste(osc52TextRef.current);
+      return;
+    }
+    // Last resort: show an input field where the user can native-paste
     setShowPasteInput(true);
     setTimeout(() => pasteInputRef.current?.focus(), 50);
   }, []);
