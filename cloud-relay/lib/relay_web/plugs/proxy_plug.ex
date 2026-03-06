@@ -2,18 +2,42 @@ defmodule RelayWeb.Plugs.ProxyPlug do
   @moduledoc """
   Proxies HTTP requests through the tunnel to the TmuxDeck backend.
   Only active when an instance_id is assigned by SubdomainPlug.
+  Requires the logged-in account to own the instance.
   """
   import Plug.Conn
+
+  alias Relay.Accounts
+  alias Relay.Instances
 
   @proxy_timeout 30_000
 
   def init(opts), do: opts
 
   def call(%{assigns: %{instance_id: instance_id}} = conn, _opts) when is_binary(instance_id) do
-    proxy_request(conn, instance_id)
+    conn
+    |> fetch_session()
+    |> require_instance_owner(instance_id)
   end
 
   def call(conn, _opts), do: conn
+
+  defp require_instance_owner(conn, instance_id) do
+    with token when is_binary(token) <- get_session(conn, :account_token),
+         {account, _inserted_at} <- Accounts.get_account_by_session_token(token),
+         %{account_id: account_id} <- Instances.get_instance_by_instance_id(instance_id),
+         true <- account_id == account.id do
+      proxy_request(conn, instance_id)
+    else
+      _ ->
+        base_host = RelayWeb.Endpoint.config(:url)[:host] || "localhost"
+        login_url = "https://#{base_host}/accounts/log-in"
+
+        conn
+        |> put_resp_header("location", login_url)
+        |> send_resp(302, "")
+        |> halt()
+    end
+  end
 
   defp proxy_request(conn, instance_id) do
     case Relay.Tunnels.TunnelServer.lookup(instance_id) do
@@ -24,7 +48,6 @@ defmodule RelayWeb.Plugs.ProxyPlug do
         |> halt()
 
       {:ok, tunnel_pid} ->
-        # Check if this is a WebSocket upgrade
         if websocket_upgrade?(conn) do
           proxy_websocket(conn, tunnel_pid, instance_id)
         else
