@@ -30,10 +30,13 @@ pkgs.stdenv.mkDerivation {
   MIX_ENV = "prod";
   MIX_REBAR3 = "${rebar3}/bin/rebar3";
   HEX_OFFLINE = "1";
-  LANG = "en_US.UTF-8";
+  LANG = "C.UTF-8";
+  LC_ALL = "C.UTF-8";
+  ELIXIR_ERL_OPTIONS = "+fnu";
   ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
   TAILWIND_PATH = "${pkgs.tailwindcss}/bin/tailwindcss";
   SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
+  HEX_CACERTS_PATH = "${cacert}/etc/ssl/certs/ca-bundle.crt";
 
   configurePhase = ''
     runHook preConfigure
@@ -53,10 +56,9 @@ pkgs.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
-    # Compile deps first, skip heroicons (it's app: false, compile: false)
-    mix deps.compile --force --skip heroicons 2>&1 || mix deps.compile --force
+    mix deps.compile --force
 
-    mix compile
+    mix compile --no-deps-check
 
     # Build assets
     mix assets.deploy 2>/dev/null || true
