@@ -127,6 +127,32 @@ class UpdateTemplateRequest(CamelModel):
     default_env: dict[str, str] | None = None
 
 
+# --- Relays ---
+
+
+class RelayConfig(CamelModel):
+    id: str
+    name: str
+    url: str
+    token: str
+    enabled: bool = True
+    connected: bool = False
+
+
+class CreateRelayRequest(CamelModel):
+    name: str
+    url: str
+    token: str
+    enabled: bool = True
+
+
+class UpdateRelayRequest(CamelModel):
+    name: str | None = None
+    url: str | None = None
+    token: str | None = None
+    enabled: bool | None = None
+
+
 # --- Settings ---
 
 

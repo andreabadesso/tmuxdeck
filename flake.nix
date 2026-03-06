@@ -28,6 +28,7 @@
           uvloop
           httptools
           websockets
+          aiohttp
           docker
           pydantic-settings
           python-multipart

@@ -9,6 +9,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .logging_setup import setup as setup_logging
+
+# Install non-blocking logging before anything else logs.
+setup_logging()
+
 from . import store
 from .api.auth import router as auth_router
 from .api.bridges import router as bridges_router
@@ -86,8 +91,9 @@ async def lifespan(app: FastAPI):
     store._ensure_dir(config.data_path / "templates")
     store._ensure_dir(config.data_path / "containers")
 
-    # Use a larger thread pool for docker-py and other blocking I/O
-    executor = ThreadPoolExecutor(max_workers=16)
+    # Each PTY terminal connection blocks a thread on os.read permanently,
+    # so we need enough headroom beyond the number of open terminals.
+    executor = ThreadPoolExecutor(max_workers=64)
     asyncio.get_running_loop().set_default_executor(executor)
 
     # Seed default templates
@@ -99,11 +105,26 @@ async def lifespan(app: FastAPI):
     # Start Telegram bot
     telegram_bot = await _start_telegram_bot()
 
+    # Start relay connections from settings (+ legacy env-var fallback)
+    from .services.relay_manager import RelayManager
+    relay_manager = RelayManager.get()
+
+    stored_relays = store.list_relays()
+    if stored_relays:
+        await relay_manager.sync(stored_relays, config.relay_backend_url)
+    elif config.relay_url and config.relay_token:
+        # Legacy env-var support: treat as a single relay
+        from .services.relay_client import RelayClient
+        _legacy = RelayClient(config.relay_url, config.relay_token, config.relay_backend_url)
+        asyncio.create_task(_legacy.connect_with_retry(), name="relay-legacy")
+        logger.info("Relay client started (env) → %s", config.relay_url)
+
     logger.info("TmuxDeck backend started")
     yield
     logger.info("TmuxDeck backend shutting down")
 
     # Cleanup
+    await relay_manager.stop_all()
     if telegram_bot:
         await telegram_bot.stop()
     await nm.cleanup()

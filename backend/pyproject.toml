@@ -13,6 +13,8 @@ dependencies = [
     "pyte>=0.8.0",
     "Pillow>=10.0.0",
     "openai>=1.50.0",
+    "websockets>=13.0",
+    "aiohttp>=3.10.0",
 ]
 
 [project.scripts]

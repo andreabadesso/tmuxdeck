@@ -197,6 +197,7 @@ function setupWebSocketTerminal(
   onBellWarning: (warning: BellWarning | null) => void,
   wsRef: { current: WebSocket | null },
   windowIndexRef: { current: number },
+  osc52TextRef: { current: string | null },
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
@@ -715,7 +716,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef);
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef);
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;

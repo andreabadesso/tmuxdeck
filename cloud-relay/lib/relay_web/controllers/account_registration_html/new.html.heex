@@ -1,0 +1,51 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div style="display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 200px);">
+    <div style="width: 100%; max-width: 400px;">
+
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <div style="font-family: var(--mono); font-size: 0.7rem; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.75rem;">
+          TmuxDeck Relay
+        </div>
+        <h1 style="font-size: 1.75rem; font-weight: 600; color: var(--text); letter-spacing: -0.03em; margin: 0 0 0.5rem;">
+          Create an account
+        </h1>
+        <p style="font-size: 0.875rem; color: var(--muted); margin: 0;">
+          Already have one?
+          <.link navigate={~p"/accounts/log-in"} style="color: var(--accent); text-decoration: none; font-weight: 500;">Log in</.link>.
+        </p>
+      </div>
+
+      <div class="card" style="padding: 2rem;">
+        <.form :let={f} for={@changeset} action={~p"/accounts/register"}>
+          <.input
+            field={f[:email]}
+            type="email"
+            label="Email"
+            autocomplete="username"
+            spellcheck="false"
+            required
+            phx-mounted={JS.focus()}
+          />
+          <.input
+            field={f[:password]}
+            type="password"
+            label="Password"
+            autocomplete="new-password"
+            spellcheck="false"
+            required
+          />
+          <.button phx-disable-with="Creating account..."
+            class="btn-accent"
+            style="width: 100%; padding: 10px 16px; border-radius: 7px; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0.25rem;">
+            Create account <span style="font-family: var(--mono);">→</span>
+          </.button>
+        </.form>
+      </div>
+
+      <p style="text-align: center; margin-top: 1rem; font-size: 0.75rem; color: var(--muted); font-family: var(--mono);">
+        Access your tmux sessions from anywhere.
+      </p>
+
+    </div>
+  </div>
+</Layouts.app>

@@ -256,6 +256,10 @@ export const mockApi: ApiClient = {
     return { chats: [] as { chatId: number; username: string | null; firstName: string | null }[] };
   },
 
+  async listRelays() { return []; },
+  async createRelay(_data: { name: string; url: string; token: string; enabled?: boolean }) { throw new Error('Not implemented in mock'); },
+  async updateRelay(_id: string, _data: { name?: string; url?: string; token?: string; enabled?: boolean }) { throw new Error('Not implemented in mock'); },
+  async deleteRelay(_id: string) {},
   async listBridges() { return []; },
   async createBridge(_name: string) { throw new Error('Not implemented in mock'); },
   async updateBridge(_id: string, _data: { enabled?: boolean }) { throw new Error('Not implemented in mock'); },
