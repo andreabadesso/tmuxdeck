@@ -96,7 +96,6 @@
               ensureDatabases = [ cfg.database.name ];
               ensureUsers = [{
                 name = cfg.database.user;
-                ensureDBOwnership = true;
               }];
             };
 
