@@ -33,6 +33,7 @@ pkgs.stdenv.mkDerivation {
   LANG = "en_US.UTF-8";
   ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
   TAILWIND_PATH = "${pkgs.tailwindcss}/bin/tailwindcss";
+  SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
 
   configurePhase = ''
     runHook preConfigure
