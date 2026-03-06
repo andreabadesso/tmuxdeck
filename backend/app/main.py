@@ -9,6 +9,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .logging_setup import setup as setup_logging
+
+# Install non-blocking logging before anything else logs.
+setup_logging()
+
 from . import store
 from .api.auth import router as auth_router
 from .api.bridges import router as bridges_router
@@ -86,8 +91,9 @@ async def lifespan(app: FastAPI):
     store._ensure_dir(config.data_path / "templates")
     store._ensure_dir(config.data_path / "containers")
 
-    # Use a larger thread pool for docker-py and other blocking I/O
-    executor = ThreadPoolExecutor(max_workers=16)
+    # Each PTY terminal connection blocks a thread on os.read permanently,
+    # so we need enough headroom beyond the number of open terminals.
+    executor = ThreadPoolExecutor(max_workers=64)
     asyncio.get_running_loop().set_default_executor(executor)
 
     # Seed default templates
