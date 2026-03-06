@@ -49,8 +49,7 @@ pkgs.stdenv.mkDerivation {
 
     # Copy hex archive into MIX_HOME so mix can find it
     mkdir -p "$MIX_HOME/archives"
-    cp -r ${hex}/lib/erlang/lib/hex "$MIX_HOME/archives/hex-${hex.version || "latest"}" 2>/dev/null || \
-      cp -r ${hex}/lib/erlang/lib/hex* "$MIX_HOME/archives/" 2>/dev/null || true
+    cp -r ${hex}/lib/erlang/lib/hex* "$MIX_HOME/archives/" 2>/dev/null || true
 
     # Link fetched deps
     cp -r ${mixFodDeps} deps
