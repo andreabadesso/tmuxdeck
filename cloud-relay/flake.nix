@@ -89,6 +89,13 @@
           };
 
           config = lib.mkIf cfg.enable {
+            # ── System user ───────────────────────────────────────────────
+            users.users.${cfg.database.user} = {
+              isSystemUser = true;
+              group = cfg.database.user;
+            };
+            users.groups.${cfg.database.user} = {};
+
             # ── PostgreSQL ──────────────────────────────────────────────────
             services.postgresql = {
               enable = true;
@@ -109,7 +116,7 @@
                 PHX_HOST = cfg.domain;
                 PHX_SERVER = "true";
                 PORT = toString cfg.port;
-                DATABASE_URL = "ecto:///${cfg.database.name}?socket_dir=/run/postgresql";
+                DATABASE_URL = "ecto://${cfg.database.user}@/${cfg.database.name}?socket_dir=/run/postgresql";
                 MIX_ENV = "prod";
                 RELEASE_NAME = "relay";
                 RELEASE_DISTRIBUTION = "none";
@@ -121,7 +128,8 @@
                 ExecStart = "${relayPkg}/bin/relay start";
                 Restart = "on-failure";
                 RestartSec = 5;
-                DynamicUser = true;
+                User = cfg.database.user;
+                Group = cfg.database.user;
                 StateDirectory = "tmuxdeck-relay";
                 EnvironmentFile = cfg.secretKeyBaseFile;
                 NoNewPrivileges = true;
