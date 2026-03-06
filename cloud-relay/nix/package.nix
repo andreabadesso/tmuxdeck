@@ -8,8 +8,8 @@
 let
   src = ../.;
   version = "0.1.0";
-  elixir = beamPackages.elixir;
   erlang = beamPackages.erlang;
+  elixir = beamPackages.elixir;
   hex = beamPackages.hex;
   rebar3 = beamPackages.rebar3;
 
@@ -41,10 +41,16 @@ pkgs.stdenv.mkDerivation {
   configurePhase = ''
     runHook preConfigure
     export HOME=$(mktemp -d)
-    export MIX_HOME=$HOME/.mix
-    export HEX_HOME=$HOME/.hex
-    mix local.hex --force
-    mix local.rebar --force
+
+    # hex setupHook sets HEX_HOME; set MIX_HOME alongside it
+    export MIX_HOME="$HOME/.mix"
+    export HEX_HOME="$MIX_HOME/hex"
+    mkdir -p "$MIX_HOME" "$HEX_HOME"
+
+    # Copy hex archive into MIX_HOME so mix can find it
+    mkdir -p "$MIX_HOME/archives"
+    cp -r ${hex}/lib/erlang/lib/hex "$MIX_HOME/archives/hex-${hex.version || "latest"}" 2>/dev/null || \
+      cp -r ${hex}/lib/erlang/lib/hex* "$MIX_HOME/archives/" 2>/dev/null || true
 
     # Link fetched deps
     cp -r ${mixFodDeps} deps
@@ -57,7 +63,6 @@ pkgs.stdenv.mkDerivation {
     runHook preBuild
 
     mix deps.compile --force
-
     mix compile --no-deps-check
 
     # Build assets
