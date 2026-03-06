@@ -15,7 +15,7 @@ let
     pname = "relay-mix-deps";
     inherit src version;
     # Run `nix build .#packages.x86_64-linux.default 2>&1 | grep 'got:'` to get the hash.
-    sha256 = lib.fakeSha256;
+    sha256 = "sha256-0/5TPeSRbTViMKtxRRUswu0Wt4huD+WiYR9dV+2oNhU=";
   };
 in
 
