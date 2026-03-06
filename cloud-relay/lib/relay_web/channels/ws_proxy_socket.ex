@@ -8,13 +8,27 @@ defmodule RelayWeb.WsProxySocket do
   require Logger
 
   @impl WebSock
+  def init(%{tunnel_pid: tunnel_pid, path: path} = state) when is_pid(tunnel_pid) do
+    {:ok, stream_id} = Relay.Tunnels.TunnelServer.open_stream(tunnel_pid, self())
+
+    ws_open_payload = Jason.encode!(%{"path" => path, "headers" => Map.get(state, :headers, %{})})
+
+    Relay.Tunnels.TunnelServer.client_frame(
+      tunnel_pid,
+      stream_id,
+      :ws_open,
+      ws_open_payload
+    )
+
+    {:ok, %{state | stream_id: stream_id}}
+  end
+
   def init(%{instance_id: instance_id, path: path} = state) do
     case Relay.Tunnels.TunnelServer.lookup(instance_id) do
       {:ok, tunnel_pid} ->
         {:ok, stream_id} = Relay.Tunnels.TunnelServer.open_stream(tunnel_pid, self())
 
-        # Tell the TmuxDeck agent to open a WebSocket to this path
-        ws_open_payload = Jason.encode!(%{"path" => path})
+        ws_open_payload = Jason.encode!(%{"path" => path, "headers" => Map.get(state, :headers, %{})})
 
         Relay.Tunnels.TunnelServer.client_frame(
           tunnel_pid,
