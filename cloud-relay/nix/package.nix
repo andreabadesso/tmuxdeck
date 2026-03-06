@@ -61,7 +61,7 @@ pkgs.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
-    mix deps.compile --force
+    mix deps.compile --force --no-deps-check
     mix compile --no-deps-check
 
     # Build assets
