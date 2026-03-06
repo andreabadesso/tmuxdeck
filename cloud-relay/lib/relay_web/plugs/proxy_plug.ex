@@ -34,7 +34,15 @@ defmodule RelayWeb.Plugs.ProxyPlug do
   end
 
   defp proxy_http(conn, tunnel_pid) do
-    {:ok, body, conn} = read_body(conn)
+    # Plug.Parsers runs before this plug and consumes the raw body.
+    # If read_body returns empty, re-encode body_params as JSON fallback.
+    {:ok, raw, conn} = read_body(conn)
+    body =
+      if raw == "" and map_size(conn.body_params) > 0 do
+        Jason.encode!(conn.body_params)
+      else
+        raw
+      end
     {:ok, stream_id} = Relay.Tunnels.TunnelServer.open_stream(tunnel_pid, self())
 
     request_payload =
@@ -71,10 +79,20 @@ defmodule RelayWeb.Plugs.ProxyPlug do
     end
   end
 
-  defp proxy_websocket(conn, _tunnel_pid, _instance_id) do
-    # WebSocket proxying is handled by the WsProxySocket handler
-    # registered in the endpoint. This plug just handles HTTP.
-    conn
+  defp proxy_websocket(conn, tunnel_pid, instance_id) do
+    path = request_path_with_query(conn)
+    headers = filter_headers(conn.req_headers)
+
+    state = %{
+      instance_id: instance_id,
+      path: path,
+      headers: headers,
+      tunnel_pid: tunnel_pid,
+      stream_id: nil
+    }
+
+    WebSockAdapter.upgrade(conn, RelayWeb.WsProxySocket, state, [])
+    |> halt()
   end
 
   defp websocket_upgrade?(conn) do

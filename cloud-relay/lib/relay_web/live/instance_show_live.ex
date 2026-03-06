@@ -54,76 +54,86 @@ defmodule RelayWeb.InstanceShowLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="max-w-2xl mx-auto">
-      <.link navigate={~p"/dashboard"} class="text-sm text-zinc-400 hover:text-zinc-300 mb-4 inline-block">
-        &larr; Back to Dashboard
+    <div style="max-width: 42rem; margin: 0 auto;">
+      <.link navigate={~p"/dashboard"}
+        style="font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none;
+               display: inline-flex; align-items: center; gap: 6px; margin-bottom: 1.5rem;"
+        onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+        ← Back to Dashboard
       </.link>
 
-      <div class="bg-zinc-800 rounded-lg p-8 border border-zinc-700">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-bold"><%= @instance.name %></h2>
-          <span
-            class={[
-              "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-              @instance.status == "online" && "bg-green-900 text-green-300",
-              @instance.status == "offline" && "bg-zinc-700 text-zinc-400"
-            ]}
-          >
+      <div class="card" style="padding: 2rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+          <h2 style="font-size: 1.25rem; font-weight: 600; color: var(--text); margin: 0;">
+            <%= @instance.name %>
+          </h2>
+          <span class={if @instance.status == "online", do: "status-online", else: "status-offline"}>
             <%= @instance.status %>
           </span>
         </div>
 
-        <dl class="space-y-4">
+        <dl style="display: flex; flex-direction: column; gap: 1.25rem;">
           <div>
-            <dt class="text-sm text-zinc-400">Instance ID</dt>
-            <dd class="font-mono text-sm"><%= @instance.instance_id %></dd>
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Instance ID</dt>
+            <dd style="font-family: var(--mono); font-size: 0.85rem; color: var(--text); margin: 0;"><%= @instance.instance_id %></dd>
           </div>
           <div>
-            <dt class="text-sm text-zinc-400">Public URL</dt>
-            <dd class="font-mono text-sm text-blue-400">
-              https://<%= @instance.instance_id %>.<%= RelayWeb.Endpoint.config(:url)[:host] || "relay.tmuxdeck.io" %>
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Public URL</dt>
+            <dd style="margin: 0;">
+              <a href={"https://#{@instance.instance_id}.#{RelayWeb.Endpoint.config(:url)[:host] || "relay.tmuxdeck.io"}"}
+                target="_blank"
+                style="font-family: var(--mono); font-size: 0.85rem; color: var(--accent); text-decoration: none; word-break: break-all;"
+                onmouseover="this.style.textDecoration='underline'"
+                onmouseout="this.style.textDecoration='none'">
+                https://<%= @instance.instance_id %>.<%= RelayWeb.Endpoint.config(:url)[:host] || "relay.tmuxdeck.io" %>
+              </a>
             </dd>
           </div>
           <div>
-            <dt class="text-sm text-zinc-400">Token Status</dt>
-            <dd class="text-sm">
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Token Status</dt>
+            <dd style="font-family: var(--mono); font-size: 0.85rem; margin: 0;">
               <%= if @instance.revoked_at do %>
-                <span class="text-red-400">Revoked at <%= Calendar.strftime(@instance.revoked_at, "%Y-%m-%d %H:%M UTC") %></span>
+                <span style="color: #f87171;">revoked · <%= Calendar.strftime(@instance.revoked_at, "%Y-%m-%d %H:%M UTC") %></span>
               <% else %>
-                <span class="text-green-400">Active</span>
-                <span class="text-zinc-500 ml-2">(prefix: <%= @instance.token_prefix %>)</span>
+                <span style="color: #4ade80;">active</span>
+                <span style="color: var(--muted); margin-left: 0.75rem; font-size: 0.75rem;">prefix: <%= @instance.token_prefix %></span>
               <% end %>
             </dd>
           </div>
           <div :if={@instance.last_seen_at}>
-            <dt class="text-sm text-zinc-400">Last Seen</dt>
-            <dd class="text-sm"><%= Calendar.strftime(@instance.last_seen_at, "%Y-%m-%d %H:%M:%S UTC") %></dd>
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Last Seen</dt>
+            <dd style="font-family: var(--mono); font-size: 0.85rem; color: var(--text); margin: 0;"><%= Calendar.strftime(@instance.last_seen_at, "%Y-%m-%d %H:%M:%S UTC") %></dd>
           </div>
           <div>
-            <dt class="text-sm text-zinc-400">Created</dt>
-            <dd class="text-sm"><%= Calendar.strftime(@instance.inserted_at, "%Y-%m-%d %H:%M UTC") %></dd>
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Created</dt>
+            <dd style="font-family: var(--mono); font-size: 0.85rem; color: var(--text); margin: 0;"><%= Calendar.strftime(@instance.inserted_at, "%Y-%m-%d %H:%M UTC") %></dd>
           </div>
         </dl>
 
-        <div :if={@new_token} class="mt-6 bg-yellow-900/30 border border-yellow-700 rounded p-4">
-          <p class="text-yellow-300 text-sm font-medium mb-2">New token (copy now, shown once):</p>
-          <code class="text-green-300 break-all text-sm"><%= @new_token %></code>
+        <div :if={@new_token} style="margin-top: 1.5rem; background: rgba(74,222,128,0.05); border: 1px solid rgba(74,222,128,0.2); border-radius: 8px; padding: 1rem;">
+          <p style="font-family: var(--mono); font-size: 0.7rem; color: #4ade80; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 8px;">
+            New token — copy now, shown once
+          </p>
+          <code style="font-family: var(--mono); font-size: 0.8rem; color: #4ade80; word-break: break-all;"><%= @new_token %></code>
         </div>
 
-        <div class="mt-8 flex gap-3">
+        <div style="margin-top: 2rem; display: flex; gap: 0.75rem;">
           <button
             :if={!@instance.revoked_at}
             phx-click="revoke"
             data-confirm="Revoke this token? The instance will disconnect."
-            class="bg-yellow-700 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm transition"
-          >
+            style="font-family: var(--mono); font-size: 0.8rem; color: #fbbf24; background: rgba(251,191,36,0.08);
+                   border: 1px solid rgba(251,191,36,0.2); padding: 8px 16px; border-radius: 7px; cursor: pointer;
+                   transition: border-color 0.15s;"
+            onmouseover="this.style.borderColor='rgba(251,191,36,0.5)'"
+            onmouseout="this.style.borderColor='rgba(251,191,36,0.2)'">
             Revoke Token
           </button>
           <button
             phx-click="regenerate"
             data-confirm="Generate a new token? The old one will stop working."
-            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition"
-          >
+            class="btn-accent"
+            style="font-family: var(--mono); font-size: 0.8rem; padding: 8px 16px; border-radius: 7px; cursor: pointer;">
             Regenerate Token
           </button>
         </div>

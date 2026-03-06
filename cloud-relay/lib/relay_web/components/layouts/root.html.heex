@@ -7,40 +7,195 @@
     <.live_title default="TmuxDeck Relay">
       {assigns[:page_title]}
     </.live_title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
+    <style>
+      :root {
+        --bg: #0c0c0e;
+        --surface: #131316;
+        --surface-2: #1c1c21;
+        --border: #252529;
+        --border-hover: #3a3a42;
+        --accent: #f97316;
+        --accent-dim: rgba(249, 115, 22, 0.15);
+        --text: #e2e2e6;
+        --muted: #6b6b76;
+        --mono: 'IBM Plex Mono', monospace;
+        --sans: 'DM Sans', sans-serif;
+      }
+      * { font-family: var(--sans); }
+      code, .mono { font-family: var(--mono); }
+      body {
+        background-color: var(--bg);
+        background-image:
+          radial-gradient(ellipse 80% 50% at 50% -20%, rgba(249,115,22,0.04) 0%, transparent 60%);
+        min-height: 100vh;
+      }
+      .relay-input {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--text) !important;
+        font-family: var(--mono) !important;
+        font-size: 0.875rem !important;
+        transition: border-color 0.15s ease;
+      }
+      .relay-input:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.1) !important;
+        outline: none !important;
+      }
+      .relay-input::placeholder { color: var(--muted) !important; }
+      .btn-accent {
+        background: var(--accent);
+        color: #0c0c0e;
+        font-weight: 600;
+        font-size: 0.875rem;
+        letter-spacing: 0.01em;
+        border: none;
+        transition: opacity 0.15s ease, transform 0.1s ease;
+      }
+      .btn-accent:hover { opacity: 0.9; transform: translateY(-1px); }
+      .btn-ghost {
+        background: var(--surface-2);
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 0.875rem;
+        border: 1px solid var(--border);
+        transition: border-color 0.15s ease, color 0.15s ease;
+      }
+      .btn-ghost:hover { border-color: var(--border-hover); color: var(--text); }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      .status-online {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(34,197,94,0.1); color: #4ade80;
+        padding: 2px 10px; border-radius: 999px; font-size: 0.75rem;
+        font-family: var(--mono); letter-spacing: 0.05em;
+      }
+      .status-online::before {
+        content: ''; width: 6px; height: 6px; border-radius: 50%;
+        background: #4ade80;
+        animation: pulse-green 2s infinite;
+      }
+      .status-offline {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(107,107,118,0.15); color: var(--muted);
+        padding: 2px 10px; border-radius: 999px; font-size: 0.75rem;
+        font-family: var(--mono); letter-spacing: 0.05em;
+      }
+      .status-offline::before {
+        content: ''; width: 6px; height: 6px; border-radius: 50%;
+        background: var(--muted);
+      }
+      @keyframes pulse-green {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      .divider-or {
+        display: flex; align-items: center; gap: 12px;
+        color: var(--muted); font-size: 0.75rem;
+        font-family: var(--mono); letter-spacing: 0.1em;
+      }
+      .divider-or::before, .divider-or::after {
+        content: ''; flex: 1; height: 1px; background: var(--border);
+      }
+      /* Override Phoenix component defaults */
+      .fieldset { margin-bottom: 1rem; }
+      .fieldset label { display: block; }
+      .fieldset .label {
+        display: block;
+        font-family: var(--mono) !important;
+        font-size: 0.7rem !important;
+        color: var(--muted) !important;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+        font-weight: 400;
+      }
+      .fieldset input[type="email"],
+      .fieldset input[type="password"],
+      .fieldset input[type="text"],
+      .fieldset .input,
+      .w-full.input {
+        background: var(--surface-2) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--text) !important;
+        font-family: var(--mono) !important;
+        font-size: 0.875rem !important;
+        border-radius: 7px !important;
+        padding: 10px 12px !important;
+        width: 100% !important;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        outline: none;
+      }
+      .fieldset input:focus,
+      .fieldset input:focus-within,
+      .w-full.input:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.1) !important;
+      }
+      .fieldset input::placeholder { color: var(--muted) !important; }
+      .phx-submit-loading .btn-accent { opacity: 0.6; }
+    </style>
   </head>
-  <body class="bg-zinc-900 text-white min-h-screen">
-    <nav class="border-b border-zinc-800 px-4 sm:px-6 lg:px-8 py-3">
-      <div class="max-w-4xl mx-auto flex items-center justify-between">
-        <.link href={~p"/"} class="text-lg font-bold text-white hover:text-zinc-300">
-          TmuxDeck Relay
+  <body style="background-color: var(--bg); color: var(--text); min-height: 100vh;">
+    <nav style="border-bottom: 1px solid var(--border); padding: 0 1.5rem;">
+      <div style="max-width: 64rem; margin: 0 auto; height: 52px; display: flex; align-items: center; justify-content: space-between;">
+        <.link href={~p"/"} style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
+          <span style="font-family: var(--mono); font-size: 0.95rem; color: var(--text); letter-spacing: -0.02em;">
+            <span style="color: var(--accent);">tmux</span>deck<span style="color: var(--muted);">/relay</span>
+          </span>
         </.link>
-        <ul class="flex items-center gap-4 text-sm">
+        <ul style="display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0;">
           <%= if @current_scope do %>
-            <li class="text-zinc-400">{@current_scope.account.email}</li>
-            <li>
-              <.link href={~p"/dashboard"} class="text-zinc-300 hover:text-white">Dashboard</.link>
+            <li style="margin-right: 8px;">
+              <span style="font-family: var(--mono); font-size: 0.75rem; color: var(--muted);">
+                <%= @current_scope.account.email %>
+              </span>
             </li>
             <li>
-              <.link href={~p"/accounts/settings"} class="text-zinc-300 hover:text-white">Settings</.link>
+              <.link href={~p"/dashboard"} style="color: var(--muted); font-size: 0.875rem; text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: color 0.15s; display: block;"
+                onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+                Dashboard
+              </.link>
             </li>
             <li>
-              <.link href={~p"/accounts/log-out"} method="delete" class="text-zinc-400 hover:text-white">Log out</.link>
+              <.link href={~p"/accounts/settings"} style="color: var(--muted); font-size: 0.875rem; text-decoration: none; padding: 6px 12px; border-radius: 6px;"
+                onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+                Settings
+              </.link>
+            </li>
+            <li>
+              <.link href={~p"/accounts/log-out"} method="delete" style="color: var(--muted); font-size: 0.875rem; text-decoration: none; padding: 6px 12px; border-radius: 6px;"
+                onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+                Log out
+              </.link>
             </li>
           <% else %>
             <li>
-              <.link href={~p"/accounts/register"} class="text-zinc-300 hover:text-white">Register</.link>
+              <.link href={~p"/accounts/register"} style="color: var(--muted); font-size: 0.875rem; text-decoration: none; padding: 6px 14px; border-radius: 6px;"
+                onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+                Register
+              </.link>
             </li>
             <li>
-              <.link href={~p"/accounts/log-in"} class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Log in</.link>
+              <.link href={~p"/accounts/log-in"} style="background: var(--accent); color: #0c0c0e; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 6px 16px; border-radius: 6px;">
+                Log in
+              </.link>
             </li>
           <% end %>
         </ul>
       </div>
     </nav>
-    <main class="px-4 sm:px-6 lg:px-8 py-8">
+    <main style="padding: 2.5rem 1.5rem;">
       {@inner_content}
     </main>
   </body>

@@ -37,62 +37,95 @@ defmodule RelayWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="max-w-4xl mx-auto">
-      <div class="flex items-center justify-between mb-8">
-        <h1 class="text-2xl font-bold">My Instances</h1>
-        <.link navigate={~p"/instances/new"} class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
-          + New Instance
+    <div style="max-width: 56rem; margin: 0 auto;">
+
+      <%# Page header %>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+        <div>
+          <div style="font-family: var(--mono); font-size: 0.7rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">
+            Dashboard
+          </div>
+          <h1 style="font-size: 1.5rem; font-weight: 600; color: var(--text); letter-spacing: -0.03em; margin: 0;">
+            My Instances
+          </h1>
+        </div>
+        <.link navigate={~p"/instances/new"}
+          style="background: var(--accent); color: #0c0c0e; font-size: 0.875rem; font-weight: 600;
+                 text-decoration: none; padding: 8px 16px; border-radius: 7px; display: flex;
+                 align-items: center; gap: 6px; transition: opacity 0.15s;">
+          <span style="font-size: 1.1em; line-height: 1;">+</span>
+          New Instance
         </.link>
       </div>
 
-      <div :if={@instances == []} class="text-center py-16 text-zinc-400">
-        <p class="text-lg">No instances yet.</p>
-        <p class="mt-2">Create one to connect your TmuxDeck server.</p>
+      <%# Empty state %>
+      <div :if={@instances == []} style="text-align: center; padding: 5rem 2rem;">
+        <div style="font-family: var(--mono); font-size: 2rem; color: var(--border); margin-bottom: 1rem;">
+          [ ]
+        </div>
+        <p style="color: var(--text); font-weight: 500; margin: 0 0 0.5rem;">No instances yet</p>
+        <p style="color: var(--muted); font-size: 0.875rem; margin: 0 0 1.5rem;">
+          Create one to connect your TmuxDeck server.
+        </p>
+        <.link navigate={~p"/instances/new"}
+          style="background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+                 font-size: 0.875rem; text-decoration: none; padding: 8px 20px; border-radius: 7px;">
+          Create your first instance →
+        </.link>
       </div>
 
-      <div class="space-y-4">
-        <div :for={instance <- @instances} class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="flex items-center gap-3">
-                <h2 class="text-lg font-semibold"><%= instance.name %></h2>
-                <span
-                  class={[
-                    "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-                    instance.status == "online" && "bg-green-900 text-green-300",
-                    instance.status == "offline" && "bg-zinc-700 text-zinc-400"
-                  ]}
-                >
+      <%# Instance list %>
+      <div style="display: flex; flex-direction: column; gap: 1px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border);">
+        <div :for={instance <- @instances}
+          style="background: var(--surface); padding: 1.25rem 1.5rem; transition: background 0.1s;"
+          onmouseover="this.style.background='var(--surface-2)'"
+          onmouseout="this.style.background='var(--surface)'">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+            <div style="min-width: 0; flex: 1;">
+              <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem; flex-wrap: wrap;">
+                <h2 style="font-size: 1rem; font-weight: 600; color: var(--text); margin: 0;">
+                  <%= instance.name %>
+                </h2>
+                <span class={if instance.status == "online", do: "status-online", else: "status-offline"}>
                   <%= instance.status %>
                 </span>
               </div>
-              <p class="text-sm text-zinc-400 mt-1 font-mono">
+              <p style="font-family: var(--mono); font-size: 0.75rem; color: var(--muted); margin: 0 0 0.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 <%= instance.instance_id %>.relay.tmuxdeck.io
               </p>
-              <p :if={instance.last_seen_at} class="text-xs text-zinc-500 mt-1">
-                Last seen: <%= Calendar.strftime(instance.last_seen_at, "%Y-%m-%d %H:%M UTC") %>
+              <p :if={instance.last_seen_at} style="font-family: var(--mono); font-size: 0.7rem; color: var(--border-hover); margin: 0;">
+                last seen <%= Calendar.strftime(instance.last_seen_at, "%Y-%m-%d %H:%M UTC") %>
               </p>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
               <.link
                 navigate={~p"/instances/#{instance.id}"}
-                class="text-sm text-blue-400 hover:text-blue-300"
-              >
+                style="font-size: 0.8rem; font-family: var(--mono); color: var(--accent);
+                       text-decoration: none; padding: 5px 12px; border-radius: 6px;
+                       border: 1px solid rgba(249,115,22,0.2); background: var(--accent-dim);
+                       transition: border-color 0.15s;"
+                onmouseover="this.style.borderColor='var(--accent)'"
+                onmouseout="this.style.borderColor='rgba(249,115,22,0.2)'">
                 Details
               </.link>
               <button
                 phx-click="delete"
                 phx-value-id={instance.id}
                 data-confirm="Are you sure? This will disconnect the instance."
-                class="text-sm text-red-400 hover:text-red-300"
-              >
+                style="font-size: 0.8rem; font-family: var(--mono); color: var(--muted);
+                       background: transparent; border: 1px solid var(--border);
+                       padding: 5px 12px; border-radius: 6px; cursor: pointer;
+                       transition: color 0.15s, border-color 0.15s;"
+                onmouseover="this.style.color='#f87171'; this.style.borderColor='rgba(248,113,113,0.3)'"
+                onmouseout="this.style.color='var(--muted)'; this.style.borderColor='var(--border)'">
                 Delete
               </button>
             </div>
           </div>
         </div>
       </div>
+
     </div>
     """
   end

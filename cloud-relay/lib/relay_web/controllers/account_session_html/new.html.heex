@@ -1,73 +1,79 @@
 <Layouts.app flash={@flash} current_scope={@current_scope}>
-  <div class="mx-auto max-w-sm space-y-4">
-    <div class="text-center">
-      <.header>
-        <p>Log in</p>
-        <:subtitle>
-          <%= if @current_scope do %>
-            You need to reauthenticate to perform sensitive actions on your account.
-          <% else %>
-            Don't have an account? <.link
-              navigate={~p"/accounts/register"}
-              class="font-semibold text-brand hover:underline"
-              phx-no-format
-            >Sign up</.link> for an account now.
-          <% end %>
-        </:subtitle>
-      </.header>
-    </div>
+  <div style="display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 200px);">
+    <div style="width: 100%; max-width: 400px;">
 
-    <div :if={local_mail_adapter?()} class="alert alert-info">
-      <.icon name="hero-information-circle" class="size-6 shrink-0" />
-      <div>
-        <p>You are running the local mail adapter.</p>
-        <p>
-          To see sent emails, visit <.link href="/dev/mailbox" class="underline">the mailbox page</.link>.
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <div style="font-family: var(--mono); font-size: 0.7rem; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.75rem;">
+          TmuxDeck Relay
+        </div>
+        <h1 style="font-size: 1.75rem; font-weight: 600; color: var(--text); letter-spacing: -0.03em; margin: 0 0 0.5rem;">
+          Welcome back
+        </h1>
+        <p style="font-size: 0.875rem; color: var(--muted); margin: 0;">
+          <%= if @current_scope do %>
+            Reauthenticate to continue.
+          <% else %>
+            No account?
+            <.link navigate={~p"/accounts/register"} style="color: var(--accent); text-decoration: none; font-weight: 500;">Sign up</.link>
+            for free.
+          <% end %>
         </p>
       </div>
+
+      <div :if={local_mail_adapter?()} style="background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.2); border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; font-size: 0.8rem; color: var(--muted); font-family: var(--mono);">
+        Local mail adapter —
+        <.link href="/dev/mailbox" style="color: var(--accent); text-decoration: none;">view mailbox</.link>
+      </div>
+
+      <div class="card" style="padding: 2rem; margin-bottom: 0.75rem;">
+        <.form :let={f} for={@form} as={:account} id="login_form_magic" action={~p"/accounts/log-in"}>
+          <.input
+            readonly={!!@current_scope}
+            field={f[:email]}
+            type="email"
+            label="Email"
+            autocomplete="username"
+            spellcheck="false"
+            required
+            phx-mounted={JS.focus()}
+          />
+          <.button class="btn-accent" style="width: 100%; padding: 10px 16px; border-radius: 7px; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0.25rem;">
+            Send magic link <span style="font-family: var(--mono);">→</span>
+          </.button>
+        </.form>
+
+        <div class="divider-or" style="margin: 1.5rem 0;">or</div>
+
+        <.form :let={f} for={@form} as={:account} id="login_form_password" action={~p"/accounts/log-in"}>
+          <.input
+            readonly={!!@current_scope}
+            field={f[:email]}
+            type="email"
+            label="Email"
+            autocomplete="username"
+            spellcheck="false"
+            required
+          />
+          <.input
+            field={f[:password]}
+            type="password"
+            label="Password"
+            autocomplete="current-password"
+            spellcheck="false"
+          />
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.25rem;">
+            <.button class="btn-accent" name={@form[:remember_me].name} value="true"
+              style="width: 100%; padding: 10px 16px; border-radius: 7px; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              Log in &amp; stay logged in <span style="font-family: var(--mono);">→</span>
+            </.button>
+            <.button class="btn-ghost"
+              style="width: 100%; padding: 10px 16px; border-radius: 7px; cursor: pointer;">
+              Log in only this time
+            </.button>
+          </div>
+        </.form>
+      </div>
+
     </div>
-
-    <.form :let={f} for={@form} as={:account} id="login_form_magic" action={~p"/accounts/log-in"}>
-      <.input
-        readonly={!!@current_scope}
-        field={f[:email]}
-        type="email"
-        label="Email"
-        autocomplete="username"
-        spellcheck="false"
-        required
-        phx-mounted={JS.focus()}
-      />
-      <.button class="btn btn-primary w-full">
-        Log in with email <span aria-hidden="true">→</span>
-      </.button>
-    </.form>
-
-    <div class="divider">or</div>
-
-    <.form :let={f} for={@form} as={:account} id="login_form_password" action={~p"/accounts/log-in"}>
-      <.input
-        readonly={!!@current_scope}
-        field={f[:email]}
-        type="email"
-        label="Email"
-        autocomplete="username"
-        spellcheck="false"
-        required
-      />
-      <.input
-        field={f[:password]}
-        type="password"
-        label="Password"
-        autocomplete="current-password"
-        spellcheck="false"
-      />
-      <.button class="btn btn-primary w-full" name={@form[:remember_me].name} value="true">
-        Log in and stay logged in <span aria-hidden="true">→</span>
-      </.button>
-      <.button class="btn btn-primary btn-soft w-full mt-2">
-        Log in only this time
-      </.button>
-    </.form>
   </div>
 </Layouts.app>
