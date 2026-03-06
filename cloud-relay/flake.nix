@@ -14,7 +14,7 @@
         elixir = beamPackages.elixir_1_17;
       in {
         packages.default = pkgs.callPackage ./nix/package.nix {
-          inherit pkgs elixir beamPackages;
+          inherit pkgs beamPackages;
         };
 
         devShells.default = pkgs.mkShell {
