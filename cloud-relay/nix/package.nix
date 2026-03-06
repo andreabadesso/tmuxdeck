@@ -1,70 +1,44 @@
-{ lib, stdenv, elixir, beamPackages, git, rebar3 ? beamPackages.rebar3, hex ? beamPackages.hex }:
+{ lib
+, beamPackages
+, pkgs
+, git
+, nodejs
+, tailwindcss ? pkgs.tailwindcss
+, esbuild ? pkgs.esbuild
+}:
 
 let
+  src = ../.;
+  version = "0.1.0";
+
   mixFodDeps = beamPackages.fetchMixDeps {
-    pname = "relay-deps";
-    version = "0.1.0";
-    src = ../.;
+    pname = "relay-mix-deps";
+    inherit src version;
+    # Run `nix build .#packages.x86_64-linux.default 2>&1 | grep 'got:'` to get the hash.
     sha256 = lib.fakeSha256;
-    # This hash needs to be updated after first build attempt.
-    # Run: nix build 2>&1 | grep 'got:' and use that hash.
   };
 in
-stdenv.mkDerivation rec {
+
+beamPackages.mixRelease {
   pname = "tmuxdeck-relay";
-  version = "0.1.0";
-  src = ../.;
+  inherit src version mixFodDeps;
 
-  nativeBuildInputs = [ elixir hex git ];
-  buildInputs = [ rebar3 ];
+  nativeBuildInputs = [ git nodejs tailwindcss esbuild ];
 
-  MIX_ENV = "prod";
-  MIX_REBAR3 = "${rebar3}/bin/rebar3";
-  HEX_OFFLINE = "1";
-  LANG = "en_US.UTF-8";
+  # Point the Mix esbuild/tailwind wrappers to system-packaged binaries
+  # so asset compilation works inside the Nix build sandbox.
+  ESBUILD_PATH = "${esbuild}/bin/esbuild";
+  TAILWIND_PATH = "${tailwindcss}/bin/tailwindcss";
 
-  configurePhase = ''
-    runHook preConfigure
-    export HOME=$(mktemp -d)
-    export MIX_HOME=$HOME/.mix
-    export HEX_HOME=$HOME/.hex
-    mix local.hex --force
-    mix local.rebar --force
-
-    # Link deps
-    cp -r ${mixFodDeps} deps
-    chmod -R u+w deps
-
-    runHook postConfigure
-  '';
-
-  buildPhase = ''
-    runHook preBuild
-
-    mix deps.compile --force
-    mix compile
-
-    # Build assets
-    mix assets.deploy 2>/dev/null || true
-
-    # Build release
-    mix release --overwrite
-
-    runHook postBuild
-  '';
-
-  installPhase = ''
-    runHook preInstall
-
-    mkdir -p $out
-    cp -r _build/prod/rel/relay/* $out/
-
-    runHook postInstall
+  postBuild = ''
+    # Compile and digest assets for production
+    mix assets.deploy
   '';
 
   meta = with lib; {
     description = "TmuxDeck Cloud Relay - tunnel proxy for remote TmuxDeck access";
     license = licenses.mit;
-    platforms = platforms.unix;
+    platforms = platforms.linux;
+    mainProgram = "relay";
   };
 }
