@@ -116,7 +116,7 @@
                 PHX_HOST = cfg.domain;
                 PHX_SERVER = "true";
                 PORT = toString cfg.port;
-                DATABASE_URL = "ecto://${cfg.database.user}@/${cfg.database.name}?socket_dir=/run/postgresql";
+                DATABASE_URL = "ecto://${cfg.database.user}@localhost/${cfg.database.name}?socket_dir=/run/postgresql";
                 MIX_ENV = "prod";
                 RELEASE_NAME = "relay";
                 RELEASE_DISTRIBUTION = "none";
