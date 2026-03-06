@@ -123,4 +123,13 @@ defmodule Relay.Tunnels.TunnelServer do
 
     {:noreply, %{state | streams: streams}}
   end
+
+  @impl true
+  def terminate(_reason, state) do
+    for {_stream_id, client_pid} <- state.streams do
+      send(client_pid, :tunnel_closed)
+    end
+
+    :ok
+  end
 end
