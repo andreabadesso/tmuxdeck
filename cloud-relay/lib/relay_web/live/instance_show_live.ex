@@ -90,6 +90,12 @@ defmodule RelayWeb.InstanceShowLive do
             </dd>
           </div>
           <div>
+            <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Relay URL</dt>
+            <dd style="font-family: var(--mono); font-size: 0.85rem; color: var(--text); margin: 0; word-break: break-all;">
+              wss://<%= RelayWeb.Endpoint.config(:url)[:host] || "relay.tmuxdeck.io" %>/ws/tunnel
+            </dd>
+          </div>
+          <div>
             <dt style="font-family: var(--mono); font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px;">Token Status</dt>
             <dd style="font-family: var(--mono); font-size: 0.85rem; margin: 0;">
               <%= if @instance.revoked_at do %>
