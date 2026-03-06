@@ -15,6 +15,7 @@
       in {
         packages.default = pkgs.callPackage ./nix/package.nix {
           inherit pkgs beamPackages;
+          inherit (pkgs) git cacert;
         };
 
         devShells.default = pkgs.mkShell {

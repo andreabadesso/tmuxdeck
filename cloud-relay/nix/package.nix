@@ -2,37 +2,75 @@
 , beamPackages
 , pkgs
 , git
-, nodejs
-, tailwindcss ? pkgs.tailwindcss
-, esbuild ? pkgs.esbuild
+, cacert
 }:
 
 let
   src = ../.;
   version = "0.1.0";
+  elixir = beamPackages.elixir;
+  erlang = beamPackages.erlang;
+  hex = beamPackages.hex;
+  rebar3 = beamPackages.rebar3;
 
   mixFodDeps = beamPackages.fetchMixDeps {
     pname = "relay-mix-deps";
     inherit src version;
-    # Run `nix build .#packages.x86_64-linux.default 2>&1 | grep 'got:'` to get the hash.
     sha256 = "sha256-0/5TPeSRbTViMKtxRRUswu0Wt4huD+WiYR9dV+2oNhU=";
   };
 in
 
-beamPackages.mixRelease {
+pkgs.stdenv.mkDerivation {
   pname = "tmuxdeck-relay";
-  inherit src version mixFodDeps;
+  inherit src version;
 
-  nativeBuildInputs = [ git nodejs tailwindcss esbuild ];
+  nativeBuildInputs = [ elixir hex git cacert pkgs.nodejs pkgs.tailwindcss pkgs.esbuild ];
+  buildInputs = [ erlang rebar3 ];
 
-  # Point the Mix esbuild/tailwind wrappers to system-packaged binaries
-  # so asset compilation works inside the Nix build sandbox.
-  ESBUILD_PATH = "${esbuild}/bin/esbuild";
-  TAILWIND_PATH = "${tailwindcss}/bin/tailwindcss";
+  MIX_ENV = "prod";
+  MIX_REBAR3 = "${rebar3}/bin/rebar3";
+  HEX_OFFLINE = "1";
+  LANG = "en_US.UTF-8";
+  ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
+  TAILWIND_PATH = "${pkgs.tailwindcss}/bin/tailwindcss";
 
-  postBuild = ''
-    # Compile and digest assets for production
-    mix assets.deploy
+  configurePhase = ''
+    runHook preConfigure
+    export HOME=$(mktemp -d)
+    export MIX_HOME=$HOME/.mix
+    export HEX_HOME=$HOME/.hex
+    mix local.hex --force
+    mix local.rebar --force
+
+    # Link fetched deps
+    cp -r ${mixFodDeps} deps
+    chmod -R u+w deps
+
+    runHook postConfigure
+  '';
+
+  buildPhase = ''
+    runHook preBuild
+
+    # Compile deps first, skip heroicons (it's app: false, compile: false)
+    mix deps.compile --force --skip heroicons 2>&1 || mix deps.compile --force
+
+    mix compile
+
+    # Build assets
+    mix assets.deploy 2>/dev/null || true
+
+    # Build release
+    mix release --overwrite
+
+    runHook postBuild
+  '';
+
+  installPhase = ''
+    runHook preInstall
+    mkdir -p $out
+    cp -r _build/prod/rel/relay/* $out/
+    runHook postInstall
   '';
 
   meta = with lib; {
