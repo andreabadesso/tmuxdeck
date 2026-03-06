@@ -98,9 +98,38 @@ defmodule RelayWeb.TunnelSocket do
 
             {:push, {:text, reply}, new_state}
 
-          {:error, {:already_started, _}} ->
-            reply = Jason.encode!(%{"event" => "error", "reason" => "instance_already_connected"})
-            {:push, {:text, reply}, state}
+          {:error, {:already_started, old_pid}} ->
+            Logger.info("Replacing existing tunnel for #{instance.instance_id}")
+            GenServer.stop(old_pid, :replaced)
+
+            case Relay.Tunnels.TunnelSupervisor.start_tunnel(
+                   instance_id: instance.instance_id,
+                   account_id: instance.account_id,
+                   agent_pid: self()
+                 ) do
+              {:ok, _pid} ->
+                Relay.Instances.mark_online(instance)
+
+                reply =
+                  Jason.encode!(%{
+                    "event" => "authenticated",
+                    "instance_id" => instance.instance_id,
+                    "url" => RelayWeb.Endpoint.url() |> build_instance_url(instance.instance_id)
+                  })
+
+                new_state = %{
+                  state
+                  | authenticated: true,
+                    instance_id: instance.instance_id,
+                    account_id: instance.account_id
+                }
+
+                {:push, {:text, reply}, new_state}
+
+              {:error, reason} ->
+                reply = Jason.encode!(%{"event" => "error", "reason" => "tunnel_start_failed: #{inspect(reason)}"})
+                {:push, {:text, reply}, state}
+            end
         end
 
       {:error, reason} ->
