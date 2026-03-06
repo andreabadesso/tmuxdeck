@@ -40,11 +40,22 @@ defmodule RelayWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug :session_with_domain
 
   # Subdomain-based proxy (before router, so proxied requests bypass Phoenix routing)
   plug RelayWeb.Plugs.SubdomainPlug
   plug RelayWeb.Plugs.ProxyPlug
 
   plug RelayWeb.Router
+
+  defp session_with_domain(conn, _opts) do
+    host = __MODULE__.config(:url)[:host] || "localhost"
+
+    opts =
+      @session_options
+      |> Keyword.put(:domain, ".#{host}")
+      |> Plug.Session.init()
+
+    Plug.Session.call(conn, opts)
+  end
 end

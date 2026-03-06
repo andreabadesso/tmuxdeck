@@ -97,7 +97,7 @@ defmodule RelayWeb.AccountAuth do
 
     conn
     |> renew_session(nil)
-    |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
+    |> delete_resp_cookie(@remember_me_cookie, remember_me_options())
     |> redirect(to: ~p"/")
   end
 
@@ -201,7 +201,12 @@ defmodule RelayWeb.AccountAuth do
   defp write_remember_me_cookie(conn, token) do
     conn
     |> put_session(:account_remember_me, true)
-    |> put_resp_cookie(@remember_me_cookie, token, @remember_me_options)
+    |> put_resp_cookie(@remember_me_cookie, token, remember_me_options())
+  end
+
+  defp remember_me_options do
+    host = RelayWeb.Endpoint.config(:url)[:host] || "localhost"
+    Keyword.put(@remember_me_options, :domain, ".#{host}")
   end
 
   defp put_token_in_session(conn, token) do
