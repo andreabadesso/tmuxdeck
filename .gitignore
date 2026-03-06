@@ -11,3 +11,6 @@ backend/data/
 result
 result-*
 .direnv/
+
+# Private server/infra config
+infra/
