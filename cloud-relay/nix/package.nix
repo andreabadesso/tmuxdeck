@@ -61,10 +61,6 @@ pkgs.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
-    # Remove heroicons from mix.lock to avoid lock mismatch
-    # (it's app: false, compile: false — only used for SVG icons at build time)
-    sed -i '/heroicons/d' mix.lock
-
     mix deps.compile --force
     mix compile
 
