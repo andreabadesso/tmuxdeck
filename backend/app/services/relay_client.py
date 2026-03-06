@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import struct
@@ -33,7 +34,9 @@ class RelayClient:
         self.backend_url = backend_url.rstrip("/")
         self._ws: websockets.ClientConnection | None = None
         self._ws_streams: dict[int, asyncio.Task] = {}
+        self._ws_local_conns: dict[int, websockets.ClientConnection] = {}
         self._running = False
+        self.is_connected: bool = False
 
     async def connect_with_retry(self, max_retries: int = 0) -> None:
         """Connect to the relay with exponential backoff. max_retries=0 means infinite."""
@@ -68,6 +71,7 @@ class RelayClient:
             reply = json.loads(await ws.recv())
 
             if reply.get("event") == "authenticated":
+                self.is_connected = True
                 logger.info(
                     "Relay connected! Instance: %s, URL: %s",
                     reply.get("instance_id"),
@@ -83,10 +87,12 @@ class RelayClient:
                 await self._handle_tunnel(ws)
             finally:
                 self._running = False
+                self.is_connected = False
                 # Clean up any active WS streams
                 for task in self._ws_streams.values():
                     task.cancel()
                 self._ws_streams.clear()
+                self._ws_local_conns.clear()
 
     async def _handle_tunnel(self, ws: websockets.ClientConnection) -> None:
         """Main loop: receive frames from relay and dispatch them."""
@@ -134,24 +140,35 @@ class RelayClient:
             headers = request.get("headers", {})
             body = None
             if "body" in request and request["body"]:
-                import base64
-
                 body = base64.b64decode(request["body"])
 
-            # Remove headers that would conflict
-            headers.pop("host", None)
-            headers.pop("Host", None)
+            # Remove headers that would conflict with aiohttp's own handling
+            for h in ["host", "Host", "content-length", "Content-Length",
+                      "transfer-encoding", "Transfer-Encoding"]:
+                headers.pop(h, None)
 
+            # Use a long read timeout but no total timeout for streaming responses
+            timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_read=300)
             async with aiohttp.ClientSession() as session:
                 async with session.request(
                     method=method,
                     url=f"{self.backend_url}{path}",
                     headers=headers,
                     data=body,
-                    timeout=aiohttp.ClientTimeout(total=30),
+                    timeout=timeout,
+                    allow_redirects=False,
                 ) as resp:
-                    resp_body = await resp.read()
-                    import base64
+                    content_type = resp.headers.get("content-type", "")
+                    is_streaming = "text/event-stream" in content_type
+
+                    if is_streaming:
+                        # SSE/streaming responses never end — the relay protocol only
+                        # supports one HTTP_RESPONSE per stream, so we can't proxy them.
+                        # Return an empty 200 so the client fails gracefully without hanging.
+                        logger.debug("Skipping SSE stream for %s %s", method, path)
+                        resp_body = b""
+                    else:
+                        resp_body = await resp.read()
 
                     response = json.dumps(
                         {
@@ -164,7 +181,7 @@ class RelayClient:
                     await ws.send(frame)
 
         except Exception as e:
-            logger.error("Proxy HTTP error for stream %d: %s", stream_id, e)
+            logger.error("Proxy HTTP error for stream %d: %s", stream_id, e, exc_info=True)
             error_response = json.dumps(
                 {
                     "status": 502,
@@ -185,12 +202,22 @@ class RelayClient:
         try:
             request = json.loads(payload)
             path = request["path"]
+            headers = request.get("headers", {})
             local_url = self.backend_url.replace("http://", "ws://").replace(
                 "https://", "wss://"
             )
             local_url = f"{local_url}{path}"
 
-            local_ws = await websockets.connect(local_url, max_size=None)
+            # Forward auth headers (cookie) so backend accepts the WS connection
+            ws_headers = {}
+            for key in ("cookie", "Cookie", "authorization", "Authorization"):
+                if key in headers:
+                    ws_headers[key] = headers[key]
+
+            local_ws = await websockets.connect(local_url, max_size=None, additional_headers=ws_headers)
+
+            # Store local_ws so _relay_ws_data can forward keystrokes to it
+            self._ws_local_conns[stream_id] = local_ws
 
             # Store a task that reads from local WS and forwards to relay
             task = asyncio.create_task(
@@ -225,6 +252,7 @@ class RelayClient:
             logger.debug("WS relay loop ended for stream %d: %s", stream_id, e)
         finally:
             self._ws_streams.pop(stream_id, None)
+            self._ws_local_conns.pop(stream_id, None)
             try:
                 await local_ws.close()
             except Exception:
@@ -232,15 +260,16 @@ class RelayClient:
 
     def _relay_ws_data(self, stream_id: int, payload: bytes) -> None:
         """Forward WebSocket data from relay to the local WS connection."""
-        task = self._ws_streams.get(stream_id)
-        if task and not task.done():
-            # We need to get the local_ws from the task's coroutine
-            # Instead, store local_ws references separately
-            # For now, this is handled within _ws_relay_loop via a queue
-            pass
+        local_ws = self._ws_local_conns.get(stream_id)
+        if local_ws:
+            try:
+                asyncio.create_task(local_ws.send(payload.decode("utf-8")))
+            except UnicodeDecodeError:
+                asyncio.create_task(local_ws.send(payload))
 
     def _close_ws_stream(self, stream_id: int) -> None:
         """Close a proxied WebSocket stream."""
         task = self._ws_streams.pop(stream_id, None)
         if task:
             task.cancel()
+        self._ws_local_conns.pop(stream_id, None)

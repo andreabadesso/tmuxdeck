@@ -84,7 +84,7 @@
           name = "tmuxdeck";
           runtimeInputs = [ pythonRuntime ];
           text = ''
-            export STATIC_DIR="''${STATIC_DIR:-}"
+            export STATIC_DIR="''${STATIC_DIR:-${frontend}}"
             export PYTHONPATH="${backend}/lib/tmuxdeck-backend"
             export DATA_DIR="''${DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/tmuxdeck}"
             mkdir -p "$DATA_DIR"

@@ -157,6 +157,15 @@ export interface CreateWindowRequest {
   name?: string;
 }
 
+export interface RelayConfig {
+  id: string;
+  name: string;
+  url: string;
+  token: string;
+  enabled: boolean;
+  connected: boolean;
+}
+
 export interface BridgeConfig {
   id: string;
   name: string;

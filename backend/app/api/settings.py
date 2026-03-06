@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import secrets
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .. import store
-from ..schemas import SettingsResponse, UpdateSettingsRequest
+from ..config import config
+from ..schemas import (
+    RelayConfig,
+    CreateRelayRequest,
+    UpdateRelayRequest,
+    SettingsResponse,
+    UpdateSettingsRequest,
+)
 from ..store import _DEFAULT_HOTKEYS
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
@@ -23,6 +30,7 @@ def _to_response(data: dict) -> SettingsResponse:
         openai_api_key=data.get("openaiApiKey", ""),
         chat_model=data.get("chatModel", "gpt-4o"),
         audio_debug_log=data.get("audioDebugLog", False),
+        telegram_voice_notifications=data.get("telegramVoiceNotifications", False),
         hotkeys={**_DEFAULT_HOTKEYS, **data.get("hotkeys", {})},
     )
 
@@ -80,3 +88,57 @@ async def remove_telegram_chat(chat_id: int):
     """Unregister a Telegram chat."""
     store.remove_telegram_chat(chat_id)
     return {"chats": store.get_telegram_chat_details()}
+
+
+# --- Relay endpoints ---
+
+def _relay_to_response(relay: dict, manager=None) -> RelayConfig:
+    from ..services.relay_manager import RelayManager
+    mgr = manager or RelayManager.get()
+    return RelayConfig(
+        id=relay["id"],
+        name=relay["name"],
+        url=relay["url"],
+        token=relay["token"],
+        enabled=relay.get("enabled", True),
+        connected=mgr.is_connected(relay["id"]),
+    )
+
+
+@router.get("/relays", response_model=list[RelayConfig])
+async def list_relays():
+    from ..services.relay_manager import RelayManager
+    mgr = RelayManager.get()
+    return [_relay_to_response(r, mgr) for r in store.list_relays()]
+
+
+@router.post("/relays", response_model=RelayConfig)
+async def create_relay(req: CreateRelayRequest):
+    relay = store.create_relay(req.model_dump())
+    if relay["enabled"]:
+        from ..services.relay_manager import RelayManager
+        await RelayManager.get().start(relay["id"], relay["url"], relay["token"], config.relay_backend_url)
+    return _relay_to_response(relay)
+
+
+@router.patch("/relays/{relay_id}", response_model=RelayConfig)
+async def update_relay(relay_id: str, req: UpdateRelayRequest):
+    relay = store.update_relay(relay_id, req.model_dump(exclude_none=True))
+    if not relay:
+        raise HTTPException(status_code=404, detail="Relay not found")
+    from ..services.relay_manager import RelayManager
+    mgr = RelayManager.get()
+    if relay.get("enabled", True):
+        await mgr.start(relay["id"], relay["url"], relay["token"], config.relay_backend_url)
+    else:
+        await mgr.stop(relay["id"])
+    return _relay_to_response(relay, mgr)
+
+
+@router.delete("/relays/{relay_id}")
+async def delete_relay(relay_id: str):
+    from ..services.relay_manager import RelayManager
+    await RelayManager.get().stop(relay_id)
+    if not store.delete_relay(relay_id):
+        raise HTTPException(status_code=404, detail="Relay not found")
+    return {"ok": True}

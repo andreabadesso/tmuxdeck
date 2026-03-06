@@ -1,30 +1,141 @@
-<div class="max-w-2xl mx-auto text-center py-20">
-  <h1 class="text-4xl font-bold mb-4">TmuxDeck Cloud Relay</h1>
-  <p class="text-lg text-zinc-400 mb-8">
-    Access your TmuxDeck instances from anywhere. No port forwarding, no VPN.
-  </p>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap');
 
-  <div class="flex justify-center gap-4">
-    <.link href={~p"/accounts/register"} class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-lg transition">
-      Get Started
-    </.link>
-    <.link href={~p"/accounts/log-in"} class="bg-zinc-700 hover:bg-zinc-600 text-white px-6 py-3 rounded-lg text-lg transition">
-      Log In
-    </.link>
+  .hero-title { font-family: 'Syne', sans-serif; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  .glow-green { text-shadow: 0 0 24px rgba(74, 222, 128, 0.5); }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(74,222,128,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74,222,128,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .terminal-line {
+    opacity: 0;
+    animation: fadeSlide 0.4s ease forwards;
+  }
+  .terminal-line:nth-child(1) { animation-delay: 0.3s; }
+  .terminal-line:nth-child(2) { animation-delay: 0.8s; }
+  .terminal-line:nth-child(3) { animation-delay: 1.3s; }
+  .terminal-line:nth-child(4) { animation-delay: 1.8s; }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: #4ade80;
+    vertical-align: middle;
+    opacity: 0;
+    animation: blink 1s step-end infinite;
+    animation-delay: 2.3s;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .feature-card { transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s; }
+  .feature-card:hover {
+    border-color: rgba(74, 222, 128, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .hero-fade { opacity: 0; animation: heroFade 0.7s ease forwards; }
+  .hero-fade:nth-child(1) { animation-delay: 0s; }
+  .hero-fade:nth-child(2) { animation-delay: 0.12s; }
+  .hero-fade:nth-child(3) { animation-delay: 0.24s; }
+  .hero-fade:nth-child(4) { animation-delay: 0.36s; }
+
+  @keyframes heroFade {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn-primary {
+    transition: box-shadow 0.15s, background 0.15s;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 24px rgba(74, 222, 128, 0.35);
+  }
+</style>
+
+<div class="grid-bg -mx-4 sm:-mx-6 lg:-mx-8 -mt-8 px-4 sm:px-6 lg:px-8">
+
+  <%# Hero %>
+  <div class="max-w-3xl mx-auto pt-24 pb-16 text-center">
+
+    <div class="hero-fade">
+      <span class="mono text-xs text-green-400 tracking-widest border border-green-400/20 bg-green-400/[0.06] px-3 py-1 rounded-full">
+        Open Beta
+      </span>
+    </div>
+
+    <h1 class="hero-fade hero-title text-5xl sm:text-6xl lg:text-7xl font-extrabold mt-6 mb-5 leading-[1.05] tracking-tight">
+      Your terminal,<br/>
+      <span class="text-green-400 glow-green">anywhere.</span>
+    </h1>
+
+    <p class="hero-fade text-lg sm:text-xl text-zinc-400 max-w-lg mx-auto leading-relaxed">
+      Remote access to your TmuxDeck without port forwarding, VPN, or configuration hell.
+    </p>
+
+    <div class="hero-fade flex items-center justify-center gap-3 mt-10">
+      <.link href={~p"/accounts/register"} class="btn-primary mono text-sm font-semibold bg-green-400 hover:bg-green-300 text-black px-7 py-3 rounded">
+        Get started →
+      </.link>
+      <.link href={~p"/accounts/log-in"} class="mono text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-7 py-3 rounded transition-colors duration-150">
+        Log in
+      </.link>
+    </div>
   </div>
 
-  <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
-    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
-      <h3 class="font-semibold text-lg mb-2">1. Create Instance</h3>
-      <p class="text-zinc-400 text-sm">Register and create a new instance in the dashboard. You'll get a token.</p>
-    </div>
-    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
-      <h3 class="font-semibold text-lg mb-2">2. Configure TmuxDeck</h3>
-      <p class="text-zinc-400 text-sm">Set RELAY_URL and RELAY_TOKEN in your TmuxDeck environment.</p>
-    </div>
-    <div class="bg-zinc-800 rounded-lg p-6 border border-zinc-700">
-      <h3 class="font-semibold text-lg mb-2">3. Connect</h3>
-      <p class="text-zinc-400 text-sm">Access your TmuxDeck from anywhere via the relay URL. That's it.</p>
+  <%# Terminal snippet %>
+  <div class="max-w-lg mx-auto mb-24">
+    <div class="rounded-xl border border-zinc-700/50 bg-[#0d0d0d] overflow-hidden shadow-2xl">
+      <div class="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-800/80 bg-zinc-950/60">
+        <div class="w-3 h-3 rounded-full bg-red-500/60"></div>
+        <div class="w-3 h-3 rounded-full bg-yellow-500/60"></div>
+        <div class="w-3 h-3 rounded-full bg-green-500/60"></div>
+        <span class="mono text-xs text-zinc-600 ml-2">~/.env</span>
+      </div>
+      <div class="p-6 mono text-sm leading-8">
+        <div class="terminal-line text-zinc-600"># Two lines. That's all it takes.</div>
+        <div class="terminal-line">
+          <span class="text-green-400">RELAY_URL</span><span class="text-zinc-600">=</span><span class="text-amber-300/80">wss://relay.tmuxdeck.io/ws/tunnel</span>
+        </div>
+        <div class="terminal-line">
+          <span class="text-green-400">RELAY_TOKEN</span><span class="text-zinc-600">=</span><span class="text-amber-300/80">tdck_••••••••••••••••••••</span>
+        </div>
+        <div class="terminal-line text-zinc-600"># You're live. <span class="cursor"></span></div>
+      </div>
     </div>
   </div>
+
+  <%# Feature cards %>
+  <div class="max-w-3xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4 pb-28">
+    <div class="feature-card rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <div class="text-2xl mb-4">⚡</div>
+      <h3 class="mono text-sm font-semibold text-white mb-2">Zero config</h3>
+      <p class="text-zinc-500 text-sm leading-relaxed">Set two env vars and you're done. No firewall rules, no dynamic DNS.</p>
+    </div>
+    <div class="feature-card rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <div class="text-2xl mb-4">🔒</div>
+      <h3 class="mono text-sm font-semibold text-white mb-2">Secure by default</h3>
+      <p class="text-zinc-500 text-sm leading-relaxed">Token-authenticated WebSocket tunnel. Revoke access anytime from the dashboard.</p>
+    </div>
+    <div class="feature-card rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <div class="text-2xl mb-4">📱</div>
+      <h3 class="mono text-sm font-semibold text-white mb-2">Any device</h3>
+      <p class="text-zinc-500 text-sm leading-relaxed">Browser, iOS, iPad. One URL gives you full access to your terminal.</p>
+    </div>
+  </div>
+
 </div>

@@ -2,6 +2,7 @@ import type { ApiClient } from './client';
 import type {
   AuthStatus,
   BridgeConfig,
+  RelayConfig,
   Container,
   ContainerListResponse,
   ContainerStreamEvent,
@@ -240,6 +241,15 @@ export const httpApi: ApiClient = {
   getTelegramChats: () => request<{ chats: TelegramChat[] }>('/settings/telegram-chats'),
   removeTelegramChat: (chatId: number) =>
     request<{ chats: TelegramChat[] }>(`/settings/telegram-chats/${chatId}`, { method: 'DELETE' }),
+
+  // Relays
+  listRelays: () => request<RelayConfig[]>('/settings/relays'),
+  createRelay: (data: { name: string; url: string; token: string; enabled?: boolean }) =>
+    request<RelayConfig>('/settings/relays', { method: 'POST', body: JSON.stringify(data) }),
+  updateRelay: (id: string, data: { name?: string; url?: string; token?: string; enabled?: boolean }) =>
+    request<RelayConfig>(`/settings/relays/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteRelay: (id: string) =>
+    request<void>(`/settings/relays/${id}`, { method: 'DELETE' }),
 
   // Bridges
   listBridges: () => request<BridgeConfig[]>('/bridges'),

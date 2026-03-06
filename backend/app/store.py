@@ -222,6 +222,61 @@ def update_settings(data: dict[str, Any]) -> dict[str, Any]:
     return current
 
 
+# --- Relays ---
+
+def relays_path() -> Path:
+    return config.data_path / "relays.json"
+
+
+def list_relays() -> list[dict[str, Any]]:
+    p = relays_path()
+    if not p.exists():
+        return []
+    return _read_json(p).get("relays", [])
+
+
+def get_relay(relay_id: str) -> dict[str, Any] | None:
+    return next((r for r in list_relays() if r["id"] == relay_id), None)
+
+
+def _save_relays(relays: list[dict[str, Any]]) -> None:
+    _ensure_dir(relays_path().parent)
+    _write_json(relays_path(), {"relays": relays})
+
+
+def create_relay(data: dict[str, Any]) -> dict[str, Any]:
+    relay = {
+        "id": str(uuid.uuid4()),
+        "name": data["name"],
+        "url": data["url"],
+        "token": data["token"],
+        "enabled": data.get("enabled", True),
+    }
+    relays = list_relays()
+    relays.append(relay)
+    _save_relays(relays)
+    return relay
+
+
+def update_relay(relay_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    relays = list_relays()
+    for i, r in enumerate(relays):
+        if r["id"] == relay_id:
+            relays[i] = {**r, **{k: v for k, v in data.items() if v is not None}}
+            _save_relays(relays)
+            return relays[i]
+    return None
+
+
+def delete_relay(relay_id: str) -> bool:
+    relays = list_relays()
+    new_relays = [r for r in relays if r["id"] != relay_id]
+    if len(new_relays) == new_relays.__len__() == len(relays):
+        return False
+    _save_relays(new_relays)
+    return True
+
+
 # --- Telegram Chats ----------------------------------------------------------
 
 

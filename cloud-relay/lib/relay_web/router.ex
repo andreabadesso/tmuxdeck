@@ -18,7 +18,7 @@ defmodule RelayWeb.Router do
   end
 
   scope "/", RelayWeb do
-    pipe_through :browser
+    pipe_through [:browser, :redirect_if_account_is_authenticated]
 
     get "/", PageController, :home
   end
