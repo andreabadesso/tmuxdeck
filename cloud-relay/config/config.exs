@@ -38,6 +38,8 @@ config :relay, RelayWeb.Endpoint,
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
+  path: System.get_env("ESBUILD_PATH"),
+  version_check: System.get_env("ESBUILD_PATH") == nil,
   relay: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
@@ -48,6 +50,8 @@ config :esbuild,
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.1.12",
+  path: System.get_env("TAILWIND_PATH"),
+  version_check: System.get_env("TAILWIND_PATH") == nil,
   relay: [
     args: ~w(
       --input=assets/css/app.css

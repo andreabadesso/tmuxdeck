@@ -77,13 +77,14 @@
               description = "Path to env file containing SECRET_KEY_BASE=<value>.";
             };
 
-            # Required for wildcard TLS (*.domain) via DNS-01 ACME challenge.
-            # File must contain: CLOUDFLARE_API_TOKEN=<token>
-            # If null, Caddy will use HTTP-01 (no wildcard — subdomains won't get TLS).
-            cloudflareTokenFile = lib.mkOption {
+            # Env file for Caddy's DNS-01 ACME challenge (wildcard TLS).
+            # Contents depend on your DNS provider plugin (e.g. CLOUDFLARE_API_TOKEN
+            # for cloudflare, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY for route53).
+            # If null, Caddy uses HTTP-01 (no wildcard — subdomains won't get TLS).
+            dnsCredentialsFile = lib.mkOption {
               type = lib.types.nullOr lib.types.path;
               default = null;
-              description = "Path to env file containing CLOUDFLARE_API_TOKEN=<value> for wildcard TLS. Required for subdomain tunnel routing over HTTPS.";
+              description = "Path to env file with DNS provider credentials for wildcard TLS via DNS-01.";
             };
           };
 
@@ -143,13 +144,11 @@
                     '';
                   };
                 }
-                # Wildcard subdomain — only when cloudflareTokenFile is set
-                (lib.mkIf (cfg.cloudflareTokenFile != null) {
+                # Wildcard subdomain — only when dnsCredentialsFile is set
+                # Override extraConfig in your server config to set your DNS provider
+                (lib.mkIf (cfg.dnsCredentialsFile != null) {
                   "*.${cfg.domain}" = {
                     extraConfig = ''
-                      tls {
-                        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-                      }
                       reverse_proxy localhost:${toString cfg.port}
                     '';
                   };
@@ -157,9 +156,9 @@
               ];
             };
 
-            # Inject Cloudflare token into Caddy's environment for DNS-01
+            # Inject DNS credentials into Caddy's environment for DNS-01
             systemd.services.caddy.serviceConfig.EnvironmentFile =
-              lib.mkIf (cfg.cloudflareTokenFile != null) cfg.cloudflareTokenFile;
+              lib.mkIf (cfg.dnsCredentialsFile != null) cfg.dnsCredentialsFile;
 
             networking.firewall.allowedTCPPorts = [ 80 443 ];
           };

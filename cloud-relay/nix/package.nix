@@ -16,7 +16,7 @@ let
   mixFodDeps = beamPackages.fetchMixDeps {
     pname = "relay-mix-deps";
     inherit src version;
-    sha256 = "sha256-0/5TPeSRbTViMKtxRRUswu0Wt4huD+WiYR9dV+2oNhU=";
+    sha256 = "sha256-ciCWlfRqdXLvs5zE4Jc97bqLopTF0/qiJNOelSD4ZRg=";
   };
 in
 
@@ -24,7 +24,7 @@ pkgs.stdenv.mkDerivation {
   pname = "tmuxdeck-relay";
   inherit src version;
 
-  nativeBuildInputs = [ elixir hex git cacert pkgs.nodejs pkgs.tailwindcss pkgs.esbuild ];
+  nativeBuildInputs = [ elixir hex git cacert pkgs.nodejs pkgs.tailwindcss_4 pkgs.esbuild ];
   buildInputs = [ erlang rebar3 ];
 
   MIX_ENV = "prod";
@@ -34,7 +34,7 @@ pkgs.stdenv.mkDerivation {
   LC_ALL = "C.UTF-8";
   ELIXIR_ERL_OPTIONS = "+fnu";
   ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
-  TAILWIND_PATH = "${pkgs.tailwindcss}/bin/tailwindcss";
+  TAILWIND_PATH = "${pkgs.tailwindcss_4}/bin/tailwindcss";
   SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
   HEX_CACERTS_PATH = "${cacert}/etc/ssl/certs/ca-bundle.crt";
 
@@ -65,7 +65,7 @@ pkgs.stdenv.mkDerivation {
     mix compile
 
     # Build assets
-    mix assets.deploy 2>/dev/null || true
+    mix assets.deploy
 
     # Build release
     mix release --overwrite
@@ -83,7 +83,7 @@ pkgs.stdenv.mkDerivation {
   meta = with lib; {
     description = "TmuxDeck Cloud Relay - tunnel proxy for remote TmuxDeck access";
     license = licenses.mit;
-    platforms = platforms.linux;
+    platforms = platforms.unix;
     mainProgram = "relay";
   };
 }
