@@ -184,8 +184,11 @@ class RelayClient:
                     frame = self._encode_frame(stream_id, HTTP_RESPONSE, response)
                     await ws.send(frame)
 
+        except websockets.exceptions.ConnectionClosed:
+            # Expected when the relay restarts (e.g. settings update via the relay itself)
+            logger.debug("Proxy HTTP stream %d: tunnel closed before response sent", stream_id)
         except Exception as e:
-            logger.error("Proxy HTTP error for stream %d: %s", stream_id, e, exc_info=True)
+            logger.error("Proxy HTTP error for stream %d: %s", stream_id, e)
             error_response = json.dumps(
                 {
                     "status": 502,

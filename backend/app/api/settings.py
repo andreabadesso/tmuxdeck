@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import secrets
 
 from fastapi import APIRouter, HTTPException
@@ -129,10 +130,17 @@ async def update_relay(relay_id: str, req: UpdateRelayRequest):
         raise HTTPException(status_code=404, detail="Relay not found")
     from ..services.relay_manager import RelayManager
     mgr = RelayManager.get()
-    if relay.get("enabled", True):
-        await mgr.start(relay["id"], relay["url"], relay["token"], config.relay_backend_url, e2e=relay.get("e2e", True))
-    else:
-        await mgr.stop(relay["id"])
+
+    # Defer relay restart so the HTTP response can be sent back through
+    # the current tunnel before it gets torn down.
+    async def _deferred_restart() -> None:
+        await asyncio.sleep(0.5)
+        if relay.get("enabled", True):
+            await mgr.start(relay["id"], relay["url"], relay["token"], config.relay_backend_url, e2e=relay.get("e2e", True))
+        else:
+            await mgr.stop(relay["id"])
+
+    asyncio.create_task(_deferred_restart())
     return _relay_to_response(relay, mgr)
 
 
