@@ -38,6 +38,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not auth.is_pin_set():
             return await call_next(request)
 
+        # Skip auth for loopback connections (relay proxy connects from 127.0.0.1)
+        client_host = request.client.host if request.client else ""
+        if client_host in ("127.0.0.1", "::1") or client_host.startswith("::ffff:127."):
+            return await call_next(request)
+
         # Check session cookie
         token = request.cookies.get("session")
         if not token or not auth.validate_session(token):

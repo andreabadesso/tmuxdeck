@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type MutableRefObject } from 'react';
 import { E2EWebSocket } from '../utils/e2eCrypto';
 
 const DEBUG_STORAGE_KEY = 'tmuxdeck-debug-hud';
@@ -26,41 +26,41 @@ type WsLike = {
 };
 
 interface DebugHudProps {
-  ws: WsLike | null;
+  wsRef: MutableRefObject<WsLike | null>;
 }
 
-export function DebugHud({ ws }: DebugHudProps) {
+export function DebugHud({ wsRef }: DebugHudProps) {
   const [latency, setLatency] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
+  const [e2eInfo, setE2eInfo] = useState<{ encrypted: boolean; cipher: string; messagesSent: number; messagesReceived: number } | null>(null);
   const pendingPings = useRef<Map<string, number>>(new Map());
 
-  // E2E info from E2EWebSocket
-  const e2e = ws instanceof E2EWebSocket ? ws.debugInfo : null;
-
-  // Ping interval
+  // Ping interval — reads wsRef.current each tick so it always uses the latest WS
   useEffect(() => {
-    if (!ws) {
-      setConnected(false);
-      return;
-    }
-    setConnected(ws.readyState === WebSocket.OPEN);
-
     const interval = setInterval(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
         setConnected(false);
         return;
       }
       setConnected(true);
+
+      // Update E2E info
+      if (ws instanceof E2EWebSocket) {
+        setE2eInfo(ws.debugInfo);
+      }
+
       const id = String(performance.now());
       pendingPings.current.set(id, performance.now());
       ws.send(`PING:${id}`);
     }, PING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [ws]);
+  }, [wsRef]);
 
   // Expose pong handler for the Terminal to call
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__debugHudPong = (timestamp: string) => {
       const sent = pendingPings.current.get(timestamp);
       if (sent !== undefined) {
@@ -69,6 +69,7 @@ export function DebugHud({ ws }: DebugHudProps) {
       }
     };
     return () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (window as any).__debugHudPong;
     };
   }, []);
@@ -98,18 +99,18 @@ export function DebugHud({ ws }: DebugHudProps) {
       </span>
 
       {/* E2E status */}
-      {e2e ? (
-        <span className={e2e.encrypted ? 'text-green-400' : 'text-yellow-400'}>
-          {e2e.encrypted ? `E2E ${e2e.cipher}` : 'E2E...'}
+      {e2eInfo ? (
+        <span className={e2eInfo.encrypted ? 'text-green-400' : 'text-yellow-400'}>
+          {e2eInfo.encrypted ? `E2E ${e2eInfo.cipher}` : 'E2E...'}
         </span>
       ) : (
         <span className="text-gray-500">NO E2E</span>
       )}
 
       {/* Message counts when E2E is active */}
-      {e2e?.encrypted && (
+      {e2eInfo?.encrypted && (
         <span className="text-gray-500">
-          tx:{e2e.messagesSent} rx:{e2e.messagesReceived}
+          tx:{e2eInfo.messagesSent} rx:{e2eInfo.messagesReceived}
         </span>
       )}
     </div>

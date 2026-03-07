@@ -1133,7 +1133,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   return (
     <div ref={wrapperRef} className="absolute inset-1 overflow-hidden flex flex-col">
       <div ref={termRef} className="flex-1 min-h-0" />
-      {debugMode && <DebugHud ws={wsRef.current} />}
+      {debugMode && <DebugHud wsRef={wsRef} />}
       {mouseWarning && (
         <div
           className="absolute top-2 left-2 right-2 flex items-center gap-2 px-3 py-2 rounded z-20 text-sm"
