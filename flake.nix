@@ -32,6 +32,7 @@
           docker
           pydantic-settings
           python-multipart
+          cryptography
           # python-telegram-bot has a broken test in nixpkgs, skip checks
           (python-telegram-bot.overridePythonAttrs { doCheck = false; })
         ]);
@@ -43,6 +44,7 @@
           docker
           pydantic-settings
           python-multipart
+          cryptography
 
           # Dev tools
           ruff
