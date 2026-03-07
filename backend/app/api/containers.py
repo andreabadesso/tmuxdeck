@@ -185,7 +185,7 @@ async def list_containers():
         dm = DockerManager.get()
         docker_containers = await dm.list_containers()
     except Exception as exc:
-        logger.warning("Docker unavailable, skipping Docker containers", exc_info=True)
+        logger.warning("Docker unavailable, skipping Docker containers: %s", exc)
         return ContainerListResponse(containers=results, docker_error=str(exc))
 
     metas = store.list_container_metas()
