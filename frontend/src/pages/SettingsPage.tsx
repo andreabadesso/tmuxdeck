@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Plus, X, LogOut, KeyRound, RefreshCw } from 'lucide-react';
+import { Save, Plus, X, LogOut, KeyRound, RefreshCw, Bug } from 'lucide-react';
 import { api } from '../api/client';
 import { changePin, logout } from '../api/httpClient';
 import { SettingsTabs } from '../components/SettingsTabs';
+import { useDebugMode } from '../components/DebugHud';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -162,6 +163,9 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* Debug Section */}
+        <DebugSection />
+
         {/* Security Section */}
         <SecuritySection />
 
@@ -183,6 +187,32 @@ export function SettingsPage() {
       </div>
       </div>
     </div>
+  );
+}
+
+function DebugSection() {
+  const [debugEnabled, toggleDebug] = useDebugMode();
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
+        Debug
+      </h2>
+      <button
+        onClick={toggleDebug}
+        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm transition-colors ${
+          debugEnabled
+            ? 'bg-blue-600 text-white hover:bg-blue-500'
+            : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+        }`}
+      >
+        <Bug size={14} />
+        {debugEnabled ? 'Debug HUD On' : 'Debug HUD Off'}
+      </button>
+      <p className="text-xs text-gray-600 mt-1">
+        Shows connection status, latency, and E2E encryption info on terminals
+      </p>
+    </section>
   );
 }
 

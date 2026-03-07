@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
 import { useToast } from './ToastContainer';
+import { DebugHud, useDebugMode } from './DebugHud';
 import { E2EWebSocket, isRelayConnection } from '../utils/e2eCrypto';
 import '@xterm/xterm/css/xterm.css';
 
@@ -167,6 +168,12 @@ function connectWebSocket(
       term.write(new Uint8Array(event.data));
     } else {
       const text = event.data as string;
+      if (text.startsWith('PONG:')) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pongHandler = (window as any).__debugHudPong as ((ts: string) => void) | undefined;
+        pongHandler?.(text.slice(5));
+        return;
+      }
       if (text.startsWith('MOUSE_WARNING:')) {
         onMouseWarning(text === 'MOUSE_WARNING:on');
         return;
@@ -548,6 +555,7 @@ async function uploadAndInject(
 }
 
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile }, ref) {
+  const [debugMode] = useDebugMode();
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -1125,6 +1133,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   return (
     <div ref={wrapperRef} className="absolute inset-1 overflow-hidden flex flex-col">
       <div ref={termRef} className="flex-1 min-h-0" />
+      {debugMode && <DebugHud ws={wsRef.current} />}
       {mouseWarning && (
         <div
           className="absolute top-2 left-2 right-2 flex items-center gap-2 px-3 py-2 rounded z-20 text-sm"

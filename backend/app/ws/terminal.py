@@ -197,6 +197,9 @@ async def _pty_terminal(
 
                 if "text" in msg:
                     text = msg["text"]
+                    if text.startswith("PING:"):
+                        await websocket.send_text("PONG:" + text[5:])
+                        continue
                     if text.startswith("RESIZE:"):
                         parts = text.split(":")
                         if len(parts) == 3:
@@ -608,6 +611,9 @@ async def _bridge_terminal(
 
                 if "text" in msg:
                     text = msg["text"]
+                    if text.startswith("PING:"):
+                        await websocket.send_text("PONG:" + text[5:])
+                        continue
                     if text.startswith("RESIZE:"):
                         parts = text.split(":")
                         if len(parts) == 3:
@@ -896,6 +902,9 @@ async def terminal_ws(
 
                     if "text" in msg:
                         text = msg["text"]
+                        if text.startswith("PING:"):
+                            await websocket.send_text("PONG:" + text[5:])
+                            continue
                         # Handle resize control message
                         if text.startswith("RESIZE:"):
                             parts = text.split(":")

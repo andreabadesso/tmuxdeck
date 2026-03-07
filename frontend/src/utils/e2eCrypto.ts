@@ -101,14 +101,26 @@ function makeNonce(direction: number, counter: number): Uint8Array {
  *   const ws = new E2EWebSocket(raw);
  *   // use ws.send(), ws.onmessage, ws.onopen, ws.onclose, ws.close() as normal
  */
+export interface E2EDebugInfo {
+  encrypted: boolean;
+  cipher: string;
+  handshakeMs: number;
+  messagesSent: number;
+  messagesReceived: number;
+}
+
 export class E2EWebSocket {
   private ws: WebSocket;
   private aesKey: CryptoKey | null = null;
   private sendCounter = 0;
+  private recvCounter = 0;
   private handshakeDone = false;
+  private handshakeStartTime = 0;
   private pendingSends: (string | ArrayBuffer | Uint8Array)[] = [];
   private clientKeyPair!: CryptoKeyPair;
   private clientRandom!: Uint8Array;
+  private selectedCipherName = '';
+  private handshakeDuration = 0;
 
   // Public API matching WebSocket interface
   onopen: ((ev: Event) => void) | null = null;
@@ -119,6 +131,16 @@ export class E2EWebSocket {
 
   get readyState(): number {
     return this.ws.readyState;
+  }
+
+  get debugInfo(): E2EDebugInfo {
+    return {
+      encrypted: this.handshakeDone,
+      cipher: this.selectedCipherName,
+      handshakeMs: this.handshakeDuration,
+      messagesSent: this.sendCounter,
+      messagesReceived: this.recvCounter,
+    };
   }
 
   constructor(ws: WebSocket) {
@@ -170,6 +192,7 @@ export class E2EWebSocket {
 
   private async startHandshake(): Promise<void> {
     try {
+      this.handshakeStartTime = performance.now();
       this.clientKeyPair = await crypto.subtle.generateKey(
         { name: 'ECDH', namedCurve: 'P-256' },
         false,
@@ -240,6 +263,8 @@ export class E2EWebSocket {
       );
 
       this.handshakeDone = true;
+      this.handshakeDuration = Math.round(performance.now() - this.handshakeStartTime);
+      this.selectedCipherName = keyBits === 128 ? 'AES-128-GCM' : 'AES-256-GCM';
 
       // Flush buffered sends
       for (const msg of this.pendingSends) {
@@ -301,6 +326,7 @@ export class E2EWebSocket {
         decoded = plain;
       }
 
+      this.recvCounter++;
       // Dispatch as a synthetic MessageEvent
       this.onmessage?.(new MessageEvent('message', { data: decoded }));
     } catch (err) {
