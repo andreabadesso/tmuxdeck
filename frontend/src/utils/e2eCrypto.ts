@@ -23,7 +23,7 @@ const E2E_MAGIC = new Uint8Array([0x00, 0xe2, 0xee, 0x00]);
 const PROTOCOL_VERSION = 1;
 
 const MSG_CLIENT_HELLO = 0x01;
-const MSG_SERVER_HELLO = 0x02;
+// SERVER_HELLO type = 0x02 (checked via byte value in completeHandshake)
 
 const CIPHER_AES_256_GCM = 0x01;
 const CIPHER_AES_128_GCM = 0x02;
@@ -114,7 +114,7 @@ export class E2EWebSocket {
   onopen: ((ev: Event) => void) | null = null;
   onmessage: ((ev: MessageEvent) => void) | null = null;
   onerror: ((ev: Event) => void) | null = null;
-  onclose: ((ev: CloseEvent) => void) | null = null;
+  onclose: ((ev: Event | CloseEvent) => void) | null = null;
   binaryType: BinaryType;
 
   get readyState(): number {
@@ -151,7 +151,7 @@ export class E2EWebSocket {
         this.pendingSends.push(data);
       } else if (ArrayBuffer.isView(data)) {
         this.pendingSends.push(
-          data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+          (data.buffer as ArrayBuffer).slice(data.byteOffset, data.byteOffset + data.byteLength),
         );
       } else {
         this.pendingSends.push(data);
@@ -212,7 +212,7 @@ export class E2EWebSocket {
 
       const serverKey = await crypto.subtle.importKey(
         'raw',
-        serverPubKey,
+        (serverPubKey as Uint8Array<ArrayBuffer>).buffer,
         { name: 'ECDH', namedCurve: 'P-256' },
         false,
         [],
@@ -232,7 +232,7 @@ export class E2EWebSocket {
       const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', transcript));
 
       this.aesKey = await crypto.subtle.deriveKey(
-        { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('tmuxdeck-e2e-v1') },
+        { name: 'HKDF', hash: 'SHA-256', salt: salt as BufferSource, info: new TextEncoder().encode('tmuxdeck-e2e-v1').buffer as ArrayBuffer },
         ikm,
         { name: 'AES-GCM', length: keyBits },
         false,
@@ -256,24 +256,26 @@ export class E2EWebSocket {
     try {
       let plainBuf: ArrayBuffer;
       if (typeof data === 'string') {
-        plainBuf = new TextEncoder().encode(data).buffer;
+        plainBuf = new TextEncoder().encode(data).buffer as ArrayBuffer;
       } else if (data instanceof ArrayBuffer) {
         plainBuf = data;
-      } else if (data instanceof Uint8Array) {
-        plainBuf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
       } else if (ArrayBuffer.isView(data)) {
-        plainBuf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        plainBuf = (data.buffer as ArrayBuffer).slice(data.byteOffset, data.byteOffset + data.byteLength);
       } else {
         plainBuf = data as ArrayBuffer;
       }
 
       const nonce = makeNonce(0x01, this.sendCounter++); // client direction
-      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, this.aesKey, plainBuf);
+      const ct = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: nonce as BufferSource },
+        this.aesKey,
+        plainBuf,
+      );
 
       const frame = new Uint8Array(12 + ct.byteLength);
       frame.set(nonce, 0);
       frame.set(new Uint8Array(ct), 12);
-      this.ws.send(frame.buffer);
+      this.ws.send(frame.buffer as ArrayBuffer);
     } catch (err) {
       console.error('[E2E] Encrypt failed:', err);
     }
@@ -283,9 +285,13 @@ export class E2EWebSocket {
     if (!this.aesKey) return;
     try {
       const view = new Uint8Array(data);
-      const nonce = view.slice(0, 12);
-      const ct = view.slice(12);
-      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, this.aesKey, ct);
+      const nonce = new Uint8Array(view.buffer, view.byteOffset, 12);
+      const ct = new Uint8Array(view.buffer, view.byteOffset + 12);
+      const plain = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: nonce as BufferSource },
+        this.aesKey,
+        ct as BufferSource,
+      );
 
       // Try decoding as text, fall back to binary
       let decoded: string | ArrayBuffer;

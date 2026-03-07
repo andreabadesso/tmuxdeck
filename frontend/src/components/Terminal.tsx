@@ -122,10 +122,14 @@ type WsLike = {
   send(data: string | ArrayBufferLike | ArrayBufferView): void;
   close(code?: number, reason?: string): void;
   readonly readyState: number;
-  onopen: ((ev: Event) => void) | null;
-  onmessage: ((ev: MessageEvent) => void) | null;
-  onerror: ((ev: Event) => void) | null;
-  onclose: ((ev: CloseEvent | Event) => void) | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onopen: ((ev: any) => any) | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onmessage: ((ev: any) => any) | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onerror: ((ev: any) => any) | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onclose: ((ev: any) => any) | null;
 };
 
 function connectWebSocket(
