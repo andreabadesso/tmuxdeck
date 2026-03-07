@@ -136,6 +136,7 @@ class RelayConfig(CamelModel):
     url: str
     token: str
     enabled: bool = True
+    e2e: bool = True
     connected: bool = False
 
 
@@ -144,6 +145,7 @@ class CreateRelayRequest(CamelModel):
     url: str
     token: str
     enabled: bool = True
+    e2e: bool = True
 
 
 class UpdateRelayRequest(CamelModel):
@@ -151,6 +153,7 @@ class UpdateRelayRequest(CamelModel):
     url: str | None = None
     token: str | None = None
     enabled: bool | None = None
+    e2e: bool | None = None
 
 
 # --- Settings ---

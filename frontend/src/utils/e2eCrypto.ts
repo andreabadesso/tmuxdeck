@@ -24,6 +24,7 @@ const PROTOCOL_VERSION = 1;
 
 const MSG_CLIENT_HELLO = 0x01;
 // SERVER_HELLO type = 0x02 (checked via byte value in completeHandshake)
+const MSG_E2E_DISABLED = 0xff;
 
 const CIPHER_AES_256_GCM = 0x01;
 const CIPHER_AES_128_GCM = 0x02;
@@ -121,6 +122,7 @@ export class E2EWebSocket {
   private clientRandom!: Uint8Array;
   private selectedCipherName = '';
   private handshakeDuration = 0;
+  private e2eDisabled = false;
 
   // Public API matching WebSocket interface
   onopen: ((ev: Event) => void) | null = null;
@@ -135,7 +137,7 @@ export class E2EWebSocket {
 
   get debugInfo(): E2EDebugInfo {
     return {
-      encrypted: this.handshakeDone,
+      encrypted: this.handshakeDone && !this.e2eDisabled,
       cipher: this.selectedCipherName,
       handshakeMs: this.handshakeDuration,
       messagesSent: this.sendCounter,
@@ -180,7 +182,12 @@ export class E2EWebSocket {
       }
       return;
     }
-    this.encryptAndSend(data);
+    if (this.e2eDisabled) {
+      // Plaintext passthrough
+      this.ws.send(data);
+    } else {
+      this.encryptAndSend(data);
+    }
   }
 
   close(code?: number, reason?: string): void {
@@ -207,8 +214,33 @@ export class E2EWebSocket {
     }
   }
 
+  private fallbackToPlaintext(): void {
+    // Server told us E2E is disabled — switch to passthrough mode.
+    this.handshakeDone = true;
+    this.e2eDisabled = true;
+    this.selectedCipherName = 'none';
+    this.handshakeDuration = Math.round(performance.now() - this.handshakeStartTime);
+    console.info('[E2E] Server disabled E2E — falling back to plaintext');
+
+    // Flush buffered sends as plaintext
+    for (const msg of this.pendingSends) {
+      if (typeof msg === 'string') {
+        this.ws.send(msg);
+      } else {
+        this.ws.send(msg);
+      }
+    }
+    this.pendingSends = [];
+  }
+
   private handleIncoming(ev: MessageEvent): void {
     const { data } = ev;
+
+    // E2E disabled: pass everything through as-is
+    if (this.e2eDisabled) {
+      this.onmessage?.(ev);
+      return;
+    }
 
     // Convert string data to ArrayBuffer when needed.
     // The relay server may send encrypted binary as a text frame if
@@ -222,8 +254,13 @@ export class E2EWebSocket {
       buf = bytes.buffer as ArrayBuffer;
     }
 
-    // During handshake: intercept SERVER_HELLO
+    // During handshake: intercept SERVER_HELLO or E2E_DISABLED
     if (!this.handshakeDone && buf && isHandshakeMessage(buf)) {
+      const msgType = new Uint8Array(buf)[5];
+      if (msgType === MSG_E2E_DISABLED) {
+        this.fallbackToPlaintext();
+        return;
+      }
       this.completeHandshake(buf);
       return;
     }

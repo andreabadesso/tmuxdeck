@@ -163,6 +163,7 @@ export interface RelayConfig {
   url: string;
   token: string;
   enabled: boolean;
+  e2e: boolean;
   connected: boolean;
 }
 

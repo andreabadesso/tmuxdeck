@@ -30,10 +30,11 @@ PONG = 0x08
 class RelayClient:
     """Connects to the cloud relay and proxies incoming requests to the local TmuxDeck backend."""
 
-    def __init__(self, relay_url: str, token: str, backend_url: str = "http://localhost:8000"):
+    def __init__(self, relay_url: str, token: str, backend_url: str = "http://localhost:8000", *, e2e: bool = True):
         self.relay_url = relay_url
         self.token = token
         self.backend_url = backend_url.rstrip("/")
+        self.e2e_enabled = e2e
         self._ws: websockets.ClientConnection | None = None
         self._ws_streams: dict[int, asyncio.Task] = {}
         self._ws_local_conns: dict[int, websockets.ClientConnection] = {}
@@ -271,7 +272,10 @@ class RelayClient:
         """Forward WebSocket data from relay to the local WS connection."""
         # E2E handshake: client sends CLIENT_HELLO before any terminal data
         if is_handshake_message(payload):
-            asyncio.create_task(self._handle_e2e_handshake(stream_id, payload))
+            if self.e2e_enabled:
+                asyncio.create_task(self._handle_e2e_handshake(stream_id, payload))
+            else:
+                asyncio.create_task(self._send_e2e_disabled(stream_id))
             return
 
         # If this stream has an E2E session, decrypt before forwarding
@@ -286,6 +290,15 @@ class RelayClient:
                 asyncio.create_task(local_ws.send(payload.decode("utf-8")))
             except UnicodeDecodeError:
                 asyncio.create_task(local_ws.send(payload))
+
+    async def _send_e2e_disabled(self, stream_id: int) -> None:
+        """Respond to CLIENT_HELLO with E2E_DISABLED so the client falls back to plaintext."""
+        # E2E_DISABLED: [magic:4][version:1][type=0xFF:1]
+        msg = b"\x00\xe2\xee\x00" + bytes([1, 0xFF])
+        if self._ws:
+            frame = self._encode_frame(stream_id, WS_DATA, msg)
+            await self._ws.send(frame)
+        logger.info("E2E disabled for stream %d (per relay config)", stream_id)
 
     async def _handle_e2e_handshake(self, stream_id: int, data: bytes) -> None:
         """Process E2E CLIENT_HELLO and respond with SERVER_HELLO."""

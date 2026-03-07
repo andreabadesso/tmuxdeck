@@ -101,6 +101,7 @@ def _relay_to_response(relay: dict, manager=None) -> RelayConfig:
         url=relay["url"],
         token=relay["token"],
         enabled=relay.get("enabled", True),
+        e2e=relay.get("e2e", True),
         connected=mgr.is_connected(relay["id"]),
     )
 
@@ -117,7 +118,7 @@ async def create_relay(req: CreateRelayRequest):
     relay = store.create_relay(req.model_dump())
     if relay["enabled"]:
         from ..services.relay_manager import RelayManager
-        await RelayManager.get().start(relay["id"], relay["url"], relay["token"], config.relay_backend_url)
+        await RelayManager.get().start(relay["id"], relay["url"], relay["token"], config.relay_backend_url, e2e=relay.get("e2e", True))
     return _relay_to_response(relay)
 
 
@@ -129,7 +130,7 @@ async def update_relay(relay_id: str, req: UpdateRelayRequest):
     from ..services.relay_manager import RelayManager
     mgr = RelayManager.get()
     if relay.get("enabled", True):
-        await mgr.start(relay["id"], relay["url"], relay["token"], config.relay_backend_url)
+        await mgr.start(relay["id"], relay["url"], relay["token"], config.relay_backend_url, e2e=relay.get("e2e", True))
     else:
         await mgr.stop(relay["id"])
     return _relay_to_response(relay, mgr)

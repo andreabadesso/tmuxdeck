@@ -30,9 +30,9 @@ class RelayManager:
         task, client = self._connections.get(relay_id, (None, None))
         return task is not None and not task.done() and client is not None and client.is_connected
 
-    async def start(self, relay_id: str, url: str, token: str, backend_url: str = "http://127.0.0.1:8000") -> None:
+    async def start(self, relay_id: str, url: str, token: str, backend_url: str = "http://127.0.0.1:8000", *, e2e: bool = True) -> None:
         await self.stop(relay_id)
-        client = RelayClient(url, token, backend_url)
+        client = RelayClient(url, token, backend_url, e2e=e2e)
         task = asyncio.create_task(client.connect_with_retry(), name=f"relay-{relay_id}")
         self._connections[relay_id] = (task, client)
         logger.info("Relay %s started → %s", relay_id, url)
@@ -63,7 +63,7 @@ class RelayManager:
             # (re)start if not running or task died
             task, _ = self._connections.get(relay_id, (None, None))
             if task is None or task.done():
-                await self.start(relay_id, relay["url"], relay["token"], backend_url)
+                await self.start(relay_id, relay["url"], relay["token"], backend_url, e2e=relay.get("e2e", True))
 
     async def stop_all(self) -> None:
         for relay_id in list(self._connections.keys()):

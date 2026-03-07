@@ -52,8 +52,8 @@ export interface ApiClient {
 
   // Relays
   listRelays(): Promise<RelayConfig[]>;
-  createRelay(data: { name: string; url: string; token: string; enabled?: boolean }): Promise<RelayConfig>;
-  updateRelay(id: string, data: { name?: string; url?: string; token?: string; enabled?: boolean }): Promise<RelayConfig>;
+  createRelay(data: { name: string; url: string; token: string; enabled?: boolean; e2e?: boolean }): Promise<RelayConfig>;
+  updateRelay(id: string, data: { name?: string; url?: string; token?: string; enabled?: boolean; e2e?: boolean }): Promise<RelayConfig>;
   deleteRelay(id: string): Promise<void>;
 
   // Bridges

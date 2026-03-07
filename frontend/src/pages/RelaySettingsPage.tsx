@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, ToggleLeft, ToggleRight, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, ToggleLeft, ToggleRight, Pencil, Check, X, Shield, ShieldOff } from 'lucide-react';
 import { api } from '../api/client';
 import { SettingsTabs } from '../components/SettingsTabs';
 import type { RelayConfig } from '../types';
@@ -99,6 +99,11 @@ export function RelaySettingsPage() {
                         }`}>
                           {!relay.enabled ? 'disabled' : relay.connected ? 'connected' : 'disconnected'}
                         </span>
+                        {relay.enabled && (
+                          <span className={`text-xs ${relay.e2e ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {relay.e2e ? 'E2E' : 'no E2E'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-gray-500 font-mono truncate mt-0.5">{relay.url}</p>
                     </div>
@@ -192,14 +197,15 @@ function RelayFormModal({
   const [url, setUrl] = useState(relay?.url ?? '');
   const [token, setToken] = useState(relay?.token ?? '');
   const [enabled, setEnabled] = useState(relay?.enabled ?? true);
+  const [e2e, setE2e] = useState(relay?.e2e ?? true);
 
   const isEdit = !!relay;
 
   const mutation = useMutation({
     mutationFn: () =>
       isEdit
-        ? api.updateRelay(relay.id, { name, url, token, enabled })
-        : api.createRelay({ name, url, token, enabled }),
+        ? api.updateRelay(relay.id, { name, url, token, enabled, e2e })
+        : api.createRelay({ name, url, token, enabled, e2e }),
     onSuccess: () => {
       onSaved();
       onClose();
@@ -262,17 +268,31 @@ function RelayFormModal({
             <p className="text-xs text-gray-600 mt-1">Get this from your relay dashboard after creating an instance</p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setEnabled(!enabled)}
-              className={`transition-colors ${enabled ? 'text-green-400' : 'text-gray-600'}`}
-            >
-              {enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-            </button>
-            <span className="text-sm text-gray-400">
-              {enabled ? 'Enabled — will connect on save' : 'Disabled — will not connect'}
-            </span>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setEnabled(!enabled)}
+                className={`transition-colors ${enabled ? 'text-green-400' : 'text-gray-600'}`}
+              >
+                {enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+              </button>
+              <span className="text-sm text-gray-400">
+                {enabled ? 'Enabled — will connect on save' : 'Disabled — will not connect'}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setE2e(!e2e)}
+                className={`transition-colors ${e2e ? 'text-green-400' : 'text-yellow-400'}`}
+              >
+                {e2e ? <Shield size={20} /> : <ShieldOff size={20} />}
+              </button>
+              <span className="text-sm text-gray-400">
+                {e2e ? 'E2E encryption enabled' : 'E2E encryption disabled — data visible to relay'}
+              </span>
+            </div>
           </div>
 
           {mutation.isError && (
