@@ -210,19 +210,31 @@ export class E2EWebSocket {
   private handleIncoming(ev: MessageEvent): void {
     const { data } = ev;
 
+    // Convert string data to ArrayBuffer when needed.
+    // The relay server may send encrypted binary as a text frame if
+    // the ciphertext happens to be valid UTF-8.
+    let buf: ArrayBuffer | null = null;
+    if (data instanceof ArrayBuffer) {
+      buf = data;
+    } else if (typeof data === 'string' && this.handshakeDone) {
+      // After handshake, ALL data should be encrypted — convert text to buffer
+      const bytes = new TextEncoder().encode(data);
+      buf = bytes.buffer as ArrayBuffer;
+    }
+
     // During handshake: intercept SERVER_HELLO
-    if (!this.handshakeDone && data instanceof ArrayBuffer && isHandshakeMessage(data)) {
-      this.completeHandshake(data);
+    if (!this.handshakeDone && buf && isHandshakeMessage(buf)) {
+      this.completeHandshake(buf);
       return;
     }
 
-    // After handshake: all incoming data is encrypted binary
-    if (this.handshakeDone && data instanceof ArrayBuffer) {
-      this.decryptAndDeliver(data);
+    // After handshake: all incoming data is encrypted
+    if (this.handshakeDone && buf) {
+      this.decryptAndDeliver(buf);
       return;
     }
 
-    // Shouldn't happen after handshake, but pass through just in case
+    // Pre-handshake non-binary messages pass through
     this.onmessage?.(ev);
   }
 
