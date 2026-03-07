@@ -12,6 +12,8 @@ from typing import Any
 import aiohttp
 import websockets
 
+from .e2e_crypto import E2ESession, handle_client_hello, is_handshake_message
+
 logger = logging.getLogger(__name__)
 
 # Frame types (must match cloud-relay/lib/relay/tunnels/protocol.ex)
@@ -35,6 +37,7 @@ class RelayClient:
         self._ws: websockets.ClientConnection | None = None
         self._ws_streams: dict[int, asyncio.Task] = {}
         self._ws_local_conns: dict[int, websockets.ClientConnection] = {}
+        self._e2e_sessions: dict[int, E2ESession] = {}
         self._running = False
         self.is_connected: bool = False
 
@@ -239,13 +242,18 @@ class RelayClient:
         stream_id: int,
         local_ws: websockets.ClientConnection,
     ) -> None:
-        """Read from local WS and forward to relay tunnel."""
+        """Read from local WS and forward to relay tunnel (encrypting if E2E is active)."""
         try:
             async for message in local_ws:
                 if isinstance(message, str):
                     data = message.encode("utf-8")
                 else:
                     data = message
+
+                session = self._e2e_sessions.get(stream_id)
+                if session:
+                    data = session.encrypt(data)
+
                 frame = self._encode_frame(stream_id, WS_DATA, data)
                 await relay_ws.send(frame)
         except Exception as e:
@@ -253,6 +261,7 @@ class RelayClient:
         finally:
             self._ws_streams.pop(stream_id, None)
             self._ws_local_conns.pop(stream_id, None)
+            self._e2e_sessions.pop(stream_id, None)
             try:
                 await local_ws.close()
             except Exception:
@@ -260,6 +269,17 @@ class RelayClient:
 
     def _relay_ws_data(self, stream_id: int, payload: bytes) -> None:
         """Forward WebSocket data from relay to the local WS connection."""
+        # E2E handshake: client sends CLIENT_HELLO before any terminal data
+        if is_handshake_message(payload):
+            asyncio.create_task(self._handle_e2e_handshake(stream_id, payload))
+            return
+
+        # If this stream has an E2E session, decrypt before forwarding
+        session = self._e2e_sessions.get(stream_id)
+        if session:
+            asyncio.create_task(self._decrypt_and_forward(session, stream_id, payload))
+            return
+
         local_ws = self._ws_local_conns.get(stream_id)
         if local_ws:
             try:
@@ -267,9 +287,39 @@ class RelayClient:
             except UnicodeDecodeError:
                 asyncio.create_task(local_ws.send(payload))
 
+    async def _handle_e2e_handshake(self, stream_id: int, data: bytes) -> None:
+        """Process E2E CLIENT_HELLO and respond with SERVER_HELLO."""
+        try:
+            server_hello, session = handle_client_hello(data)
+            self._e2e_sessions[stream_id] = session
+            # Send SERVER_HELLO back through the relay tunnel
+            if self._ws:
+                frame = self._encode_frame(stream_id, WS_DATA, server_hello)
+                await self._ws.send(frame)
+            logger.info("E2E encryption established for stream %d", stream_id)
+        except Exception as e:
+            logger.error("E2E handshake failed for stream %d: %s", stream_id, e)
+
+    async def _decrypt_and_forward(
+        self, session: E2ESession, stream_id: int, payload: bytes
+    ) -> None:
+        """Decrypt an E2E message and forward plaintext to the local WS."""
+        local_ws = self._ws_local_conns.get(stream_id)
+        if not local_ws:
+            return
+        try:
+            plaintext = session.decrypt(payload)
+            try:
+                await local_ws.send(plaintext.decode("utf-8"))
+            except UnicodeDecodeError:
+                await local_ws.send(plaintext)
+        except Exception as e:
+            logger.error("E2E decrypt failed for stream %d: %s", stream_id, e)
+
     def _close_ws_stream(self, stream_id: int) -> None:
         """Close a proxied WebSocket stream."""
         task = self._ws_streams.pop(stream_id, None)
         if task:
             task.cancel()
         self._ws_local_conns.pop(stream_id, None)
+        self._e2e_sessions.pop(stream_id, None)

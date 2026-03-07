@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
 import { useToast } from './ToastContainer';
+import { E2EWebSocket, isRelayConnection } from '../utils/e2eCrypto';
 import '@xterm/xterm/css/xterm.css';
 
 const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
@@ -116,17 +117,31 @@ interface BellWarning {
   visualBell?: string;
 }
 
+// Minimal interface shared by WebSocket and E2EWebSocket
+type WsLike = {
+  send(data: string | ArrayBufferLike | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+  readonly readyState: number;
+  onopen: ((ev: Event) => void) | null;
+  onmessage: ((ev: MessageEvent) => void) | null;
+  onerror: ((ev: Event) => void) | null;
+  onclose: ((ev: CloseEvent | Event) => void) | null;
+};
+
 function connectWebSocket(
   wsUrl: string,
   term: XTerm,
   fitAddon: FitAddon,
   onMouseWarning: (enabled: boolean) => void,
   onBellWarning: (warning: BellWarning | null) => void,
-  onConnected: (ws: WebSocket) => void,
+  onConnected: (ws: WsLike) => void,
   onDisconnected: () => void,
-): { ws: WebSocket; close: () => void } {
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
+): { ws: WsLike; close: () => void } {
+  const rawWs = new WebSocket(wsUrl);
+  rawWs.binaryType = 'arraybuffer';
+
+  // Wrap with E2E encryption when accessed through the relay
+  const ws: WsLike = isRelayConnection() ? new E2EWebSocket(rawWs) : rawWs;
 
   ws.onopen = () => {
     onConnected(ws);
@@ -195,7 +210,7 @@ function setupWebSocketTerminal(
   windowIndex: number,
   onMouseWarning: (enabled: boolean) => void,
   onBellWarning: (warning: BellWarning | null) => void,
-  wsRef: { current: WebSocket | null },
+  wsRef: { current: WsLike | null },
   windowIndexRef: { current: number },
   osc52TextRef: { current: string | null },
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
@@ -504,7 +519,7 @@ const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'imag
 async function uploadAndInject(
   blob: File | Blob,
   containerId: string,
-  ws: WebSocket | null,
+  ws: WsLike | null,
   term: XTerm | null,
 ) {
   const formData = new FormData();
@@ -536,7 +551,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<WsLike | null>(null);
   const lastSentDimsRef = useRef<{ cols: number; rows: number } | null>(null);
   const windowIndexRef = useRef(windowIndex);
   const inScrollModeRef = useRef<{ current: boolean }>({ current: false });
