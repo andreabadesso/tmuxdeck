@@ -150,6 +150,10 @@ Not just Docker — TmuxDeck can manage tmux sessions on the host machine and on
 
 Manage tmux sessions on remote machines via a lightweight agent (`tmuxdeck-bridge`) that connects back over a single WebSocket. The bridge multiplexes JSON control frames and binary terminal I/O on one connection. It supports local, host-socket, and Docker discovery on the remote side and auto-reconnects with exponential backoff. See [Bridge Setup](#bridge-setup) for details.
 
+### Cloud Relays with E2E Encryption
+
+Access TmuxDeck from anywhere without port forwarding or VPNs. Cloud relays connect outbound to a relay server and proxy traffic back to your backend. All terminal data is protected with **end-to-end encryption** (ECDH P-256 + AES-256-GCM) — the relay server never sees plaintext. E2E can be toggled per-relay in Settings. See the [E2E Encryption docs](docs/e2e-encryption.md) for protocol details.
+
 ### Configurable Keyboard Shortcuts
 
 All hotkeys are user-configurable from Settings. Click any binding to record a new key combination. Changes are persisted to `settings.json` and take effect immediately.
