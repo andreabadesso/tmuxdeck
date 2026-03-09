@@ -195,7 +195,7 @@ class DockerManager:
             sock = self._client.api.exec_start(exec_instance["Id"], socket=True, tty=True)
             # Set a timeout so a hung container doesn't leak the connection
             raw = sock._sock if hasattr(sock, "_sock") else sock
-            raw.settimeout(300)  # 5 minute timeout
+            raw.settimeout(60)  # 1 minute timeout
             return exec_instance["Id"], sock
 
         return await asyncio.to_thread(_exec)

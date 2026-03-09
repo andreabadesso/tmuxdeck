@@ -39,6 +39,7 @@ class RelayClient:
         self._ws_streams: dict[int, asyncio.Task] = {}
         self._ws_local_conns: dict[int, websockets.ClientConnection] = {}
         self._e2e_sessions: dict[int, E2ESession] = {}
+        self._background_tasks: set[asyncio.Task] = set()
         self._running = False
         self.is_connected: bool = False
 
@@ -92,18 +93,34 @@ class RelayClient:
             finally:
                 self._running = False
                 self.is_connected = False
-                # Clean up any active WS streams
-                for task in self._ws_streams.values():
+                # Clean up any active WS streams — cancel and await completion
+                tasks_to_cancel = list(self._ws_streams.values()) + list(self._background_tasks)
+                for task in tasks_to_cancel:
                     task.cancel()
+                if tasks_to_cancel:
+                    await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
                 self._ws_streams.clear()
                 self._ws_local_conns.clear()
+                self._e2e_sessions.clear()
+                self._background_tasks.clear()
+
+    def _track_task(self, coro) -> asyncio.Task:
+        """Create a task and track it so it can be cleaned up on disconnect."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def _handle_tunnel(self, ws: websockets.ClientConnection) -> None:
         """Main loop: receive frames from relay and dispatch them."""
         async for message in ws:
             if isinstance(message, str):
                 # JSON control messages
-                data = json.loads(message)
+                try:
+                    data = json.loads(message)
+                except (json.JSONDecodeError, ValueError):
+                    logger.warning("Relay sent invalid JSON control message")
+                    continue
                 if data.get("event") == "ping":
                     await ws.send(json.dumps({"event": "pong"}))
                 continue
@@ -114,9 +131,9 @@ class RelayClient:
             stream_id, frame_type, payload = self._parse_frame(message)
 
             if frame_type == HTTP_REQUEST:
-                asyncio.create_task(self._proxy_http(ws, stream_id, payload))
+                self._track_task(self._proxy_http(ws, stream_id, payload))
             elif frame_type == WS_OPEN:
-                asyncio.create_task(self._proxy_ws_open(ws, stream_id, payload))
+                self._track_task(self._proxy_ws_open(ws, stream_id, payload))
             elif frame_type == WS_DATA:
                 self._relay_ws_data(stream_id, payload)
             elif frame_type == WS_CLOSE:
@@ -138,7 +155,11 @@ class RelayClient:
     ) -> None:
         """Forward an HTTP request to the local backend and send the response back."""
         try:
-            request = json.loads(payload)
+            try:
+                request = json.loads(payload)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning("Proxy HTTP stream %d: malformed JSON request: %s", stream_id, e)
+                return
             method = request["method"]
             path = request["path"]
             headers = request.get("headers", {})
@@ -207,7 +228,11 @@ class RelayClient:
     ) -> None:
         """Open a local WebSocket connection and relay data bidirectionally."""
         try:
-            request = json.loads(payload)
+            try:
+                request = json.loads(payload)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning("WS proxy open stream %d: malformed JSON: %s", stream_id, e)
+                return
             path = request["path"]
             headers = request.get("headers", {})
             local_url = self.backend_url.replace("http://", "ws://").replace(
@@ -276,23 +301,29 @@ class RelayClient:
         # E2E handshake: client sends CLIENT_HELLO before any terminal data
         if is_handshake_message(payload):
             if self.e2e_enabled:
-                asyncio.create_task(self._handle_e2e_handshake(stream_id, payload))
+                self._track_task(self._handle_e2e_handshake(stream_id, payload))
             else:
-                asyncio.create_task(self._send_e2e_disabled(stream_id))
+                self._track_task(self._send_e2e_disabled(stream_id))
             return
 
         # If this stream has an E2E session, decrypt before forwarding
         session = self._e2e_sessions.get(stream_id)
         if session:
-            asyncio.create_task(self._decrypt_and_forward(session, stream_id, payload))
+            self._track_task(self._decrypt_and_forward(session, stream_id, payload))
             return
 
         local_ws = self._ws_local_conns.get(stream_id)
         if local_ws:
-            try:
-                asyncio.create_task(local_ws.send(payload.decode("utf-8")))
-            except UnicodeDecodeError:
-                asyncio.create_task(local_ws.send(payload))
+            self._track_task(self._forward_to_local(local_ws, payload))
+
+    async def _forward_to_local(self, local_ws: websockets.ClientConnection, payload: bytes) -> None:
+        """Forward raw payload to a local WebSocket connection."""
+        try:
+            await local_ws.send(payload.decode("utf-8"))
+        except UnicodeDecodeError:
+            await local_ws.send(payload)
+        except Exception:
+            pass
 
     async def _send_e2e_disabled(self, stream_id: int) -> None:
         """Respond to CLIENT_HELLO with E2E_DISABLED so the client falls back to plaintext."""
@@ -339,3 +370,11 @@ class RelayClient:
             task.cancel()
         self._ws_local_conns.pop(stream_id, None)
         self._e2e_sessions.pop(stream_id, None)
+        # Await the cancelled task in a tracked background task so it cleans up gracefully
+        if task:
+            async def _await_cancel(t: asyncio.Task) -> None:
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+            self._track_task(_await_cancel(task))

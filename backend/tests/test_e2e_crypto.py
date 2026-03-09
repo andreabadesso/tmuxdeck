@@ -11,7 +11,7 @@ from app.services.e2e_crypto import (
     MSG_CLIENT_HELLO,
     PROTOCOL_VERSION,
     E2ESession,
-    handle_client_hello,
+    _handle_client_hello_sync as handle_client_hello,
     is_handshake_message,
 )
 

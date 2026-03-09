@@ -17,6 +17,7 @@ Encrypted message format (binary):
 
 from __future__ import annotations
 
+import asyncio
 import os
 import struct
 from hashlib import sha256
@@ -123,15 +124,11 @@ class E2ESession:
         return self._aes.decrypt(nonce, ciphertext, None)
 
 
-def handle_client_hello(data: bytes) -> tuple[bytes, E2ESession]:
-    """Process a CLIENT_HELLO message and return (SERVER_HELLO_bytes, session).
+def _handle_client_hello_sync(data: bytes) -> tuple[bytes, E2ESession]:
+    """Synchronous implementation of the E2E handshake (CPU-intensive).
 
-    This is the server-side handshake handler. It:
-      1. Parses the CLIENT_HELLO
-      2. Generates an ephemeral ECDH key pair
-      3. Selects the strongest mutually-supported cipher
-      4. Derives the shared AES key
-      5. Returns the SERVER_HELLO response and an E2ESession
+    Performs ECDH key generation, shared secret exchange, and HKDF derivation.
+    Should be called via asyncio.to_thread() to avoid blocking the event loop.
     """
     payload = data[6:]  # skip magic + version + type
     client_ciphers, client_pubkey_raw, client_random = _parse_client_hello(
@@ -190,3 +187,12 @@ def handle_client_hello(data: bytes) -> tuple[bytes, E2ESession]:
     server_hello = _build_handshake(MSG_SERVER_HELLO, hello_payload)
 
     return server_hello, session
+
+
+async def handle_client_hello(data: bytes) -> tuple[bytes, E2ESession]:
+    """Process a CLIENT_HELLO message and return (SERVER_HELLO_bytes, session).
+
+    Offloads CPU-intensive crypto operations to a thread to avoid blocking
+    the event loop.
+    """
+    return await asyncio.to_thread(_handle_client_hello_sync, data)

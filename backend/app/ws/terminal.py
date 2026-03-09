@@ -79,6 +79,20 @@ async def _set_tmux_passthrough(tmux_prefix: list[str]) -> None:
         pass
 
 
+async def _set_tmux_window_size_largest(tmux_prefix: list[str]) -> None:
+    """Set window-size to 'largest' so smaller clients don't shrink the
+    session for larger terminals attached to the same session."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "set-option", "-g", "window-size", "largest",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except OSError:
+        pass
+
+
 async def _set_tmux_monitor_activity(tmux_prefix: list[str]) -> None:
     """Enable activity monitoring so #{window_activity_flag} works."""
     try:
@@ -166,16 +180,19 @@ async def _pty_terminal(
         if bell_problems:
             await websocket.send_text(f"BELL_WARNING:{json.dumps(bell_problems)}")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     async def pty_to_ws() -> None:
         pending_sends = 0
         max_pending = 32
+        can_send = asyncio.Event()
+        can_send.set()
         try:
             while True:
                 # Backpressure: if client is slow, pause reading from PTY
-                while pending_sends >= max_pending:
-                    await asyncio.sleep(0.05)
+                if pending_sends >= max_pending:
+                    can_send.clear()
+                    await can_send.wait()
                 data = await loop.run_in_executor(None, os.read, master_fd, 16384)
                 if not data:
                     break
@@ -184,6 +201,8 @@ async def _pty_terminal(
                     await websocket.send_bytes(data)
                 finally:
                     pending_sends -= 1
+                    if pending_sends < max_pending:
+                        can_send.set()
         except (OSError, WebSocketDisconnect):
             pass
 
@@ -782,6 +801,9 @@ async def terminal_ws(
             await _set_tmux_passthrough(tmux_prefix)
             # Enable activity monitoring for sidebar indicators
             await _set_tmux_monitor_activity(tmux_prefix)
+            # Use 'largest' window-size so mobile/tablet clients don't
+            # shrink the session for larger terminals
+            await _set_tmux_window_size_largest(tmux_prefix)
             cmd = [*tmux_prefix, "attach-session", "-t", target]
             await _pty_terminal(websocket, cmd, label="Local",
                                 tmux_prefix=tmux_prefix, session_name=session_name,
@@ -805,6 +827,9 @@ async def terminal_ws(
             await _set_tmux_passthrough(tmux_prefix)
             # Enable activity monitoring for sidebar indicators
             await _set_tmux_monitor_activity(tmux_prefix)
+            # Use 'largest' window-size so mobile/tablet clients don't
+            # shrink the session for larger terminals
+            await _set_tmux_window_size_largest(tmux_prefix)
             cmd = [*tmux_prefix, "attach-session", "-t", target]
             await _pty_terminal(websocket, cmd, label="Host",
                                 tmux_prefix=tmux_prefix, session_name=session_name,
@@ -833,6 +858,9 @@ async def terminal_ws(
         await dm.exec_command(container_id, ["tmux", "set-option", "-g", "monitor-activity", "on"])
         # No alert (no bell, no status message) — just set the window flag.
         await dm.exec_command(container_id, ["tmux", "set-option", "-g", "activity-action", "none"])
+        # Use 'largest' window-size so mobile/tablet clients don't
+        # shrink the session for larger terminals
+        await dm.exec_command(container_id, ["tmux", "set-option", "-g", "window-size", "largest"])
 
         # Start interactive docker exec: tmux attach
         cmd = ["tmux", "attach-session", "-t", target]
@@ -871,14 +899,17 @@ async def terminal_ws(
 
         async def docker_to_ws():
             """Read from docker exec socket, send to WebSocket as binary."""
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             pending_sends = 0
             max_pending = 32
+            can_send = asyncio.Event()
+            can_send.set()
             try:
                 while True:
                     # Backpressure: if client is slow, pause reading
-                    while pending_sends >= max_pending:
-                        await asyncio.sleep(0.05)
+                    if pending_sends >= max_pending:
+                        can_send.clear()
+                        await can_send.wait()
                     data = await loop.run_in_executor(None, raw_sock.recv, 16384)
                     if not data:
                         break
@@ -887,12 +918,14 @@ async def terminal_ws(
                         await websocket.send_bytes(data)
                     finally:
                         pending_sends -= 1
+                        if pending_sends < max_pending:
+                            can_send.set()
             except (OSError, WebSocketDisconnect):
                 pass
 
         async def ws_to_docker():
             """Read from WebSocket, send to docker exec socket."""
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             try:
                 while True:
                     msg = await websocket.receive()
