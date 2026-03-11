@@ -1,167 +1,44 @@
-import { useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Components } from 'react-markdown';
 
 interface MarkdownRendererProps {
   content: string;
 }
 
-/**
- * Simple markdown-to-HTML renderer. No external dependencies.
- * Handles headers, bold, italic, code blocks, inline code, links, lists,
- * blockquotes, and horizontal rules.
- */
-function renderMarkdown(md: string): string {
-  // Normalize line endings
-  let text = md.replace(/\r\n/g, '\n');
-
-  // Fenced code blocks
-  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const escaped = escapeHtml(code.trimEnd());
-    return `<pre class="md-code-block"><code class="language-${lang}">${escaped}</code></pre>`;
-  });
-
-  // Process block-level elements
-  const lines = text.split('\n');
-  const output: string[] = [];
-  let inList = false;
-  let listType = '';
-  let inBlockquote = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Skip lines inside pre blocks (already handled)
-    if (line.includes('<pre class="md-code-block">')) {
-      // Find end of pre block
-      output.push(line);
-      while (i < lines.length - 1 && !lines[i].includes('</pre>')) {
-        i++;
-        output.push(lines[i]);
-      }
-      continue;
+const components: Components = {
+  h1: ({ children }) => <h1 className="md-h1">{children}</h1>,
+  h2: ({ children }) => <h2 className="md-h2">{children}</h2>,
+  h3: ({ children }) => <h3 className="md-h3">{children}</h3>,
+  h4: ({ children }) => <h4 className="md-h4">{children}</h4>,
+  h5: ({ children }) => <h5 className="md-h5">{children}</h5>,
+  h6: ({ children }) => <h6 className="md-h6">{children}</h6>,
+  code: ({ className, children, ...props }) => {
+    const isBlock = className?.startsWith('language-');
+    if (isBlock) {
+      return (
+        <pre className="md-code-block">
+          <code className={className} {...props}>{children}</code>
+        </pre>
+      );
     }
-
-    // Horizontal rule
-    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      closeList();
-      closeBlockquote();
-      output.push('<hr class="md-hr" />');
-      continue;
-    }
-
-    // Headers
-    const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
-    if (headerMatch) {
-      closeList();
-      closeBlockquote();
-      const level = headerMatch[1].length;
-      output.push(`<h${level} class="md-h${level}">${inlineFormat(headerMatch[2])}</h${level}>`);
-      continue;
-    }
-
-    // Blockquote
-    if (line.startsWith('> ')) {
-      closeList();
-      if (!inBlockquote) {
-        output.push('<blockquote class="md-blockquote">');
-        inBlockquote = true;
-      }
-      output.push(`<p>${inlineFormat(line.slice(2))}</p>`);
-      continue;
-    } else if (inBlockquote) {
-      closeBlockquote();
-    }
-
-    // Unordered list
-    const ulMatch = line.match(/^(\s*)[*\-+]\s+(.*)$/);
-    if (ulMatch) {
-      if (!inList || listType !== 'ul') {
-        closeList();
-        output.push('<ul class="md-ul">');
-        inList = true;
-        listType = 'ul';
-      }
-      output.push(`<li>${inlineFormat(ulMatch[2])}</li>`);
-      continue;
-    }
-
-    // Ordered list
-    const olMatch = line.match(/^(\s*)\d+\.\s+(.*)$/);
-    if (olMatch) {
-      if (!inList || listType !== 'ol') {
-        closeList();
-        output.push('<ol class="md-ol">');
-        inList = true;
-        listType = 'ol';
-      }
-      output.push(`<li>${inlineFormat(olMatch[2])}</li>`);
-      continue;
-    }
-
-    closeList();
-
-    // Empty line
-    if (line.trim() === '') {
-      output.push('');
-      continue;
-    }
-
-    // Paragraph
-    output.push(`<p>${inlineFormat(line)}</p>`);
-  }
-
-  closeList();
-  closeBlockquote();
-
-  return output.join('\n');
-
-  function closeList() {
-    if (inList) {
-      output.push(listType === 'ul' ? '</ul>' : '</ol>');
-      inList = false;
-      listType = '';
-    }
-  }
-
-  function closeBlockquote() {
-    if (inBlockquote) {
-      output.push('</blockquote>');
-      inBlockquote = false;
-    }
-  }
-}
-
-function inlineFormat(text: string): string {
-  let result = escapeHtml(text);
-  // Images: ![alt](url)
-  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="md-img" />');
-  // Links: [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
-  // Bold+italic
-  result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  // Bold
-  result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  result = result.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  // Italic
-  result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  result = result.replace(/_(.+?)_/g, '<em>$1</em>');
-  // Strikethrough
-  result = result.replace(/~~(.+?)~~/g, '<del>$1</del>');
-  // Inline code
-  result = result.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-  return result;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+    return <code className="md-inline-code" {...props}>{children}</code>;
+  },
+  pre: ({ children }) => <>{children}</>,
+  a: ({ children, href }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="md-link">
+      {children}
+    </a>
+  ),
+  ul: ({ children }) => <ul className="md-ul">{children}</ul>,
+  ol: ({ children }) => <ol className="md-ol">{children}</ol>,
+  blockquote: ({ children }) => <blockquote className="md-blockquote">{children}</blockquote>,
+  hr: () => <hr className="md-hr" />,
+  table: ({ children }) => <table className="md-table">{children}</table>,
+  img: ({ src, alt }) => <img src={src} alt={alt} className="md-img" />,
+};
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
-  const html = useMemo(() => renderMarkdown(content), [content]);
-
   return (
     <div className="w-[70vw] max-h-[85vh] overflow-auto p-6">
       <div
@@ -184,9 +61,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           [&_strong]:font-bold [&_strong]:text-gray-200
           [&_em]:italic
           [&_del]:line-through [&_del]:text-gray-500
+          [&_.md-table]:w-full [&_.md-table]:border-collapse [&_.md-table]:text-sm [&_.md-table]:my-4
+          [&_.md-table_th]:bg-gray-800 [&_.md-table_th]:text-gray-200 [&_.md-table_th]:font-semibold [&_.md-table_th]:px-3 [&_.md-table_th]:py-2 [&_.md-table_th]:text-left [&_.md-table_th]:border-b [&_.md-table_th]:border-gray-600
+          [&_.md-table_td]:px-3 [&_.md-table_td]:py-1.5 [&_.md-table_td]:text-gray-300 [&_.md-table_td]:border-b [&_.md-table_td]:border-gray-800
+          [&_.md-table_tr:nth-child(even)]:bg-gray-900 [&_.md-table_tr:nth-child(odd)]:bg-gray-900/50
         "
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      >
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
