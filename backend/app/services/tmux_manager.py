@@ -91,7 +91,7 @@ class TmuxManager:
             conn = bm.get_bridge_for_container(container_id)
             if not conn:
                 dl.warn("bridge", f"No bridge connection for {container_id}", f"cmd={cmd}")
-                return ""
+                raise RuntimeError(f"No bridge connection for {container_id}")
             try:
                 source = bridge_source_from_container(container_id)
                 result = await conn.request({
@@ -100,12 +100,12 @@ class TmuxManager:
                 if result.get("error"):
                     dl.error("bridge", f"tmux_cmd error: {result['error']}", f"container={container_id} cmd={cmd}")
                     logger.debug("Bridge tmux_cmd error: %s", result["error"])
-                    return ""
+                    raise RuntimeError(f"Bridge command failed: {result['error']}")
                 return result.get("output", "")
             except asyncio.TimeoutError:
                 dl.error("bridge", f"tmux_cmd timed out for {container_id}", f"cmd={cmd}")
                 logger.warning("Bridge tmux_cmd timed out for %s", container_id)
-                return ""
+                raise RuntimeError(f"Bridge command timed out for {container_id}")
         return await self._get_docker().exec_command(container_id, cmd)
 
     async def list_windows(self, container_id: str, session_name: str) -> list[dict]:
@@ -321,6 +321,15 @@ class TmuxManager:
         if ":" in session_id:
             _, session_name = session_id.split(":", 1)
             return session_name
+        # Bridge sessions use MD5 hashes as IDs — look up the actual name
+        if _is_bridge(container_id):
+            bm = BridgeManager.get()
+            conn = bm.get_bridge_for_container(container_id)
+            if conn:
+                for s in conn.sessions:
+                    if s.get("id") == session_id:
+                        return s["name"]
+            return None
         # Fallback: treat as literal session name
         return session_id
 

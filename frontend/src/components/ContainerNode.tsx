@@ -13,6 +13,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import type { Container, SessionTarget, Selection } from '../types';
 import { isFoldedContainerSelection } from '../types';
+import { useToast } from './ToastContainer';
 import { DockerIcon } from './icons/DockerIcon';
 import { api } from '../api/client';
 import { SessionItem } from './SessionItem';
@@ -55,6 +56,7 @@ export function ContainerNode({
   sectionCollapsed,
   onToggleSection,
 }: ContainerNodeProps) {
+  const { addToast } = useToast();
   const ctype = container.containerType ?? 'docker';
   const isHost = ctype === 'host';
   const isLocal = ctype === 'local';
@@ -145,6 +147,7 @@ export function ContainerNode({
         debugLog.info('session', `Session created: ${name}`, `container=${container.id}`);
       } catch (e) {
         debugLog.error('session', `Failed to create session '${name}': ${e}`, `container=${container.id}`);
+        addToast({ title: 'Session creation failed', message: e instanceof Error ? e.message : String(e) });
       }
       onRefresh();
     }

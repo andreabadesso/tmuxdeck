@@ -6,6 +6,7 @@ import { isFoldedSelection, isWindowSelection } from '../types';
 import { api } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getSessionExpanded, saveSessionExpanded } from '../utils/sidebarState';
+import { useToast } from './ToastContainer';
 
 type PaneState = 'idle' | 'busy' | 'waiting' | 'attention';
 
@@ -182,6 +183,7 @@ export function SessionItem({
   isSessionExpanded: isSessionExpandedProp,
   setSessionExpanded: setSessionExpandedProp,
 }: SessionItemProps) {
+  const { addToast } = useToast();
   // Use centralized expanded state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(() => {
     const saved = getSessionExpanded(containerId, session.id);
@@ -240,7 +242,11 @@ export function SessionItem({
 
   const handleAddWindow = async () => {
     const name = newWindowName.trim() || undefined;
-    await api.createWindow(containerId, session.id, { name });
+    try {
+      await api.createWindow(containerId, session.id, { name });
+    } catch (e) {
+      addToast({ title: 'Window creation failed', message: e instanceof Error ? e.message : String(e) });
+    }
     onRefresh();
     setAddingWindow(false);
     setNewWindowName('');
