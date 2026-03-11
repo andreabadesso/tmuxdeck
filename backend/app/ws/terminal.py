@@ -639,38 +639,73 @@ async def _bridge_terminal(
                         try:
                             parts = text.split(":")
                             direction = parts[1] if len(parts) > 1 else ""
+                            count = parts[2] if len(parts) > 2 else "3"
+                            scroll_type = parts[3] if len(parts) > 3 else "line"
+                            # Check if pane is in alternate screen (vim, less, etc.)
+                            alt_resp = await conn.request({
+                                "type": "tmux_cmd",
+                                "cmd": ["tmux", "display-message", "-p",
+                                         "-t", session_name, "#{alternate_on}"],
+                                "source": source,
+                            })
+                            alt = alt_resp.get("output", "").strip() == "1"
                             if direction == "up":
-                                count = parts[2] if len(parts) > 2 else "3"
-                                await conn.request({
-                                    "type": "tmux_cmd",
-                                    "cmd": ["tmux", "copy-mode", "-e",
-                                             "-t", session_name],
-                                    "source": source,
-                                })
-                                await conn.request({
-                                    "type": "tmux_cmd",
-                                    "cmd": ["tmux", "send-keys",
-                                             "-t", session_name,
-                                             "-X", "-N", count, "scroll-up"],
-                                    "source": source,
-                                })
+                                if alt:
+                                    key = "PPage" if scroll_type == "page" else "Up"
+                                    cmd = ["tmux", "send-keys",
+                                           "-t", session_name]
+                                    if scroll_type != "page":
+                                        cmd += ["-N", count]
+                                    cmd.append(key)
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": cmd,
+                                        "source": source,
+                                    })
+                                else:
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": ["tmux", "copy-mode", "-e",
+                                                 "-t", session_name],
+                                        "source": source,
+                                    })
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": ["tmux", "send-keys",
+                                                 "-t", session_name,
+                                                 "-X", "-N", count, "scroll-up"],
+                                        "source": source,
+                                    })
                             elif direction == "down":
-                                count = parts[2] if len(parts) > 2 else "3"
-                                await conn.request({
-                                    "type": "tmux_cmd",
-                                    "cmd": ["tmux", "send-keys",
-                                             "-t", session_name,
-                                             "-X", "-N", count, "scroll-down"],
-                                    "source": source,
-                                })
+                                if alt:
+                                    key = "NPage" if scroll_type == "page" else "Down"
+                                    cmd = ["tmux", "send-keys",
+                                           "-t", session_name]
+                                    if scroll_type != "page":
+                                        cmd += ["-N", count]
+                                    cmd.append(key)
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": cmd,
+                                        "source": source,
+                                    })
+                                else:
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": ["tmux", "send-keys",
+                                                 "-t", session_name,
+                                                 "-X", "-N", count, "scroll-down"],
+                                        "source": source,
+                                    })
                             elif direction == "exit":
-                                await conn.request({
-                                    "type": "tmux_cmd",
-                                    "cmd": ["tmux", "send-keys",
-                                             "-t", session_name,
-                                             "-X", "cancel"],
-                                    "source": source,
-                                })
+                                if not alt:
+                                    await conn.request({
+                                        "type": "tmux_cmd",
+                                        "cmd": ["tmux", "send-keys",
+                                                 "-t", session_name,
+                                                 "-X", "cancel"],
+                                        "source": source,
+                                    })
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
                             logger.debug("Bridge scroll failed: %s", e)
                         continue
