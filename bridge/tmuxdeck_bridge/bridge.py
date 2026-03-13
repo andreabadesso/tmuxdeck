@@ -11,6 +11,7 @@ import logging
 import os
 import socket
 import struct
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,6 +38,10 @@ class Bridge:
         # Docker tmux socket caches (rebuilt on each _collect_sessions)
         self._id_to_docker_socket: dict[str, str] = {}  # session_id → socket_path
         self._name_to_docker_socket: dict[str, str] = {}  # session_name → socket_path
+        # Cached Docker client (created lazily, reset on connection failure)
+        self._docker_client = None
+        # Cache for docker tmux socket discovery: container_id → (socket_list, timestamp)
+        self._docker_socket_cache: dict[str, tuple[list[str], float]] = {}
 
     def _host_path(self, path: str) -> str:
         """Prepend host_mount_root for host file access in Docker."""
@@ -881,6 +886,43 @@ class Bridge:
 
         return []
 
+    def _get_docker_client(self):
+        """Return a cached Docker client, creating one if needed."""
+        if self._docker_client is not None:
+            return self._docker_client
+
+        try:
+            import docker as docker_lib
+        except ImportError:
+            if not getattr(self, "_docker_import_warned", False):
+                logger.warning("docker package not installed — install with: "
+                               "uv pip install docker")
+                self._docker_import_warned = True
+            return None
+
+        try:
+            self._docker_client = docker_lib.DockerClient(
+                base_url=f"unix://{self.config.docker_socket}"
+            )
+            return self._docker_client
+        except Exception as e:
+            logger.debug("Docker client creation failed: %s", e)
+            return None
+
+    def _get_cached_sockets(self, container, ttl: float = 60.0) -> list[str]:
+        """Return cached tmux sockets for a container, refreshing if stale."""
+        cid = container.id
+        now = time.monotonic()
+        cached = self._docker_socket_cache.get(cid)
+        if cached is not None:
+            sockets, ts = cached
+            if now - ts < ttl:
+                return sockets
+
+        sockets = self._find_docker_tmux_sockets(container)
+        self._docker_socket_cache[cid] = (sockets, now)
+        return sockets
+
     async def _collect_docker_sessions(self) -> list[dict]:
         """Collect tmux sessions from Docker containers.
 
@@ -889,31 +931,30 @@ class Bridge:
         if not self.config.docker_socket:
             return []
 
-        try:
-            import docker as docker_lib
-        except ImportError:
-            # Only warn once — this method is called every report interval
-            if not getattr(self, "_docker_import_warned", False):
-                logger.warning("docker package not installed — install with: "
-                               "uv pip install docker")
-                self._docker_import_warned = True
+        client = self._get_docker_client()
+        if client is None:
             return []
 
         try:
-            client = docker_lib.DockerClient(
-                base_url=f"unix://{self.config.docker_socket}"
-            )
             filters = {}
             if self.config.docker_label:
                 filters["label"] = self.config.docker_label
             containers = client.containers.list(filters=filters)
         except Exception as e:
             logger.debug("Docker list failed: %s", e)
+            # Reset client so it retries next cycle
+            self._docker_client = None
             return []
 
         # Detect own container ID so we can skip ourselves.
         # Docker sets hostname to the container ID by default.
         own_hostname = socket.gethostname()
+
+        # Prune socket cache for containers no longer present
+        active_ids = {c.id for c in containers}
+        stale_ids = [cid for cid in self._docker_socket_cache if cid not in active_ids]
+        for cid in stale_ids:
+            del self._docker_socket_cache[cid]
 
         all_sessions: list[dict] = []
         for container in containers:
@@ -924,7 +965,7 @@ class Bridge:
 
             source = f"docker:{container.short_id}"
             try:
-                sockets = self._find_docker_tmux_sockets(container)
+                sockets = self._get_cached_sockets(container)
                 # Filter out the host tmux socket to avoid duplicating
                 # sessions already reported under the "host" source
                 if self.config.host_tmux_socket and sockets:
