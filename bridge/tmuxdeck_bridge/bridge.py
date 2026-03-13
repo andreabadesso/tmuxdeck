@@ -911,11 +911,25 @@ class Bridge:
             logger.debug("Docker list failed: %s", e)
             return []
 
+        # Detect own container ID so we can skip ourselves.
+        # Docker sets hostname to the container ID by default.
+        own_hostname = socket.gethostname()
+
         all_sessions: list[dict] = []
         for container in containers:
+            # Skip the bridge's own container — its sessions are already
+            # reported under "local" and/or "host" sources.
+            if container.id.startswith(own_hostname):
+                continue
+
             source = f"docker:{container.short_id}"
             try:
                 sockets = self._find_docker_tmux_sockets(container)
+                # Filter out the host tmux socket to avoid duplicating
+                # sessions already reported under the "host" source
+                if self.config.host_tmux_socket and sockets:
+                    sockets = [s for s in sockets
+                               if s != self.config.host_tmux_socket]
                 # None means "use plain tmux (no -S)" — current behaviour
                 socket_list: list[str | None] = sockets if sockets else [None]
 
