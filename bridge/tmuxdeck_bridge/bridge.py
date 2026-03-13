@@ -34,6 +34,9 @@ class Bridge:
         # Session source lookup caches (rebuilt on each _collect_sessions)
         self._name_to_source: dict[str, str] = {}  # session_name → source
         self._id_to_source: dict[str, str] = {}  # session_id → source
+        # Docker tmux socket caches (rebuilt on each _collect_sessions)
+        self._id_to_docker_socket: dict[str, str] = {}  # session_id → socket_path
+        self._name_to_docker_socket: dict[str, str] = {}  # session_name → socket_path
 
     def _host_path(self, path: str) -> str:
         """Prepend host_mount_root for host file access in Docker."""
@@ -330,10 +333,12 @@ class Bridge:
         target = f"{session_name}:{window_index}"
 
         source = self._resolve_source(msg, session_name)
+        tmux_socket = self._name_to_docker_socket.get(session_name)
         cmd = self._build_cmd_for_source(
             ["tmux", "attach-session", "-t", target],
             source,
             interactive=source.startswith("docker:"),
+            tmux_socket=tmux_socket,
         )
 
         try:
@@ -388,7 +393,8 @@ class Bridge:
 
         session_name = self._extract_session_name_from_cmd(cmd)
         source = self._resolve_source(msg, session_name)
-        cmd = self._build_cmd_for_source(cmd, source)
+        tmux_socket = self._name_to_docker_socket.get(session_name)
+        cmd = self._build_cmd_for_source(cmd, source, tmux_socket=tmux_socket)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -597,12 +603,18 @@ class Bridge:
 
     def _build_cmd_for_source(
         self, cmd: list[str], source: str, interactive: bool = False,
+        tmux_socket: str | None = None,
     ) -> list[str]:
         """Build a command routed to the correct tmux source.
 
         source: "local", "host", or "docker:<container_short_id>"
         interactive: if True, adds -it flags for docker exec (needed for attach)
+        tmux_socket: if set and cmd starts with "tmux", inject -S <socket>
         """
+        # Inject -S <socket> into tmux commands when a socket path is provided
+        if tmux_socket and cmd and cmd[0] == "tmux":
+            cmd = [cmd[0], "-S", tmux_socket] + cmd[1:]
+
         if source == "local":
             return cmd
 
@@ -696,10 +708,15 @@ class Bridge:
         # Rebuild session→source lookup caches
         self._id_to_source = {}
         self._name_to_source = {}
+        self._id_to_docker_socket = {}
+        self._name_to_docker_socket = {}
         for s in all_sessions:
             src = s.get("source", "local")
             self._id_to_source[s["id"]] = src
             self._name_to_source[s["name"]] = src
+            if "tmux_socket" in s:
+                self._id_to_docker_socket[s["id"]] = s["tmux_socket"]
+                self._name_to_docker_socket[s["name"]] = s["tmux_socket"]
 
         return all_sessions
 
@@ -790,13 +807,18 @@ class Bridge:
             })
         return windows
 
-    def _list_docker_windows(self, container, session_name: str) -> list[dict]:
+    def _list_docker_windows(
+        self, container, session_name: str, *, socket_path: str | None = None,
+    ) -> list[dict]:
         """List windows for a tmux session inside a Docker container."""
-        result = container.exec_run(
-            ["tmux", "list-windows", "-t", session_name, "-F",
-             "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}"],
-            demux=True,
-        )
+        tmux_cmd = ["tmux"]
+        if socket_path:
+            tmux_cmd += ["-S", socket_path]
+        tmux_cmd += [
+            "list-windows", "-t", session_name, "-F",
+            "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
+        ]
+        result = container.exec_run(tmux_cmd, demux=True)
         if result.exit_code != 0:
             return []
         stdout = result.output[0] if result.output[0] else b""
@@ -819,6 +841,45 @@ class Bridge:
                 "pane_status": parts[7] if len(parts) > 7 else "",
             })
         return windows
+
+    @staticmethod
+    def _find_docker_tmux_sockets(container) -> list[str]:
+        """Discover all tmux socket paths inside a Docker container.
+
+        Tries `find /tmp/tmux-* -type s` first, falls back to
+        `ls /tmp/tmux-*/default` for minimal containers without `find`.
+        Returns a list of absolute socket paths, or empty list if none found.
+        """
+        try:
+            result = container.exec_run(
+                ["sh", "-c", "find /tmp/tmux-* -type s 2>/dev/null"],
+                demux=True,
+            )
+            if result.exit_code == 0:
+                stdout = result.output[0] if result.output[0] else b""
+                lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
+                sockets = [l.strip() for l in lines if l.strip()]
+                if sockets:
+                    return sockets
+        except Exception:
+            pass
+
+        # Fallback: containers without `find`
+        try:
+            result = container.exec_run(
+                ["sh", "-c", "ls /tmp/tmux-*/default 2>/dev/null"],
+                demux=True,
+            )
+            if result.exit_code == 0:
+                stdout = result.output[0] if result.output[0] else b""
+                lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
+                sockets = [l.strip() for l in lines if l.strip()]
+                if sockets:
+                    return sockets
+        except Exception:
+            pass
+
+        return []
 
     async def _collect_docker_sessions(self) -> list[dict]:
         """Collect tmux sessions from Docker containers.
@@ -854,41 +915,58 @@ class Bridge:
         for container in containers:
             source = f"docker:{container.short_id}"
             try:
-                result = container.exec_run(
-                    ["tmux", "list-sessions", "-F",
-                     "#{session_name}|#{session_windows}|#{session_created}|#{session_attached}"],
-                    demux=True,
-                )
-                if result.exit_code != 0:
-                    continue
-                stdout = result.output[0] if result.output[0] else b""
-                for line in stdout.decode("utf-8", errors="replace").strip().splitlines():
-                    line = line.strip()
-                    if not line or "|" not in line:
-                        continue
-                    parts = line.split("|")
-                    if len(parts) < 4:
-                        continue
-                    name = parts[0]
-                    try:
-                        created_ts = int(parts[2])
-                        created = datetime.fromtimestamp(created_ts, tz=UTC).isoformat()
-                    except (ValueError, OSError):
-                        created = datetime.now(UTC).isoformat()
-                    attached = parts[3] == "1"
+                sockets = self._find_docker_tmux_sockets(container)
+                # None means "use plain tmux (no -S)" — current behaviour
+                socket_list: list[str | None] = sockets if sockets else [None]
 
-                    session_id = hashlib.md5(
-                        f"bridge:{source}:{name}".encode()
-                    ).hexdigest()[:12]
+                for socket_path in socket_list:
+                    tmux_cmd = ["tmux"]
+                    if socket_path:
+                        tmux_cmd += ["-S", socket_path]
+                    tmux_cmd += [
+                        "list-sessions", "-F",
+                        "#{session_name}|#{session_windows}|#{session_created}|#{session_attached}",
+                    ]
 
-                    all_sessions.append({
-                        "id": session_id,
-                        "name": name,
-                        "source": source,
-                        "windows": self._list_docker_windows(container, name),
-                        "created": created,
-                        "attached": attached,
-                    })
+                    result = container.exec_run(tmux_cmd, demux=True)
+                    if result.exit_code != 0:
+                        continue
+                    stdout = result.output[0] if result.output[0] else b""
+                    for line in stdout.decode("utf-8", errors="replace").strip().splitlines():
+                        line = line.strip()
+                        if not line or "|" not in line:
+                            continue
+                        parts = line.split("|")
+                        if len(parts) < 4:
+                            continue
+                        name = parts[0]
+                        try:
+                            created_ts = int(parts[2])
+                            created = datetime.fromtimestamp(created_ts, tz=UTC).isoformat()
+                        except (ValueError, OSError):
+                            created = datetime.now(UTC).isoformat()
+                        attached = parts[3] == "1"
+
+                        # Include socket path in hash so same-named sessions
+                        # across different users get distinct IDs
+                        hash_input = f"bridge:{source}:{socket_path or ''}:{name}"
+                        session_id = hashlib.md5(
+                            hash_input.encode()
+                        ).hexdigest()[:12]
+
+                        session = {
+                            "id": session_id,
+                            "name": name,
+                            "source": source,
+                            "windows": self._list_docker_windows(
+                                container, name, socket_path=socket_path,
+                            ),
+                            "created": created,
+                            "attached": attached,
+                        }
+                        if socket_path:
+                            session["tmux_socket"] = socket_path
+                        all_sessions.append(session)
             except Exception as e:
                 logger.debug("Docker container %s tmux list failed: %s", container.short_id, e)
 
