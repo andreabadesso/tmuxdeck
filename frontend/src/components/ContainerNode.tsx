@@ -197,15 +197,15 @@ export function ContainerNode({
 
       <div data-selected={isHighlightedFoldedContainer || undefined} className={`flex items-center group px-2 py-0.5 ${isHighlightedFoldedContainer ? 'bg-blue-900/40 rounded' : ''}`}>
         {isHost ? (
-          <span className="p-0.5 shrink-0 text-blue-400 cursor-pointer" onClick={() => onToggleSection?.()}>
+          <span className="p-0.5 shrink-0 text-blue-400 cursor-pointer" onClick={() => setExpanded(!expanded)}>
             <Monitor size={14} />
           </span>
         ) : isLocal ? (
-          <span className="p-0.5 shrink-0 text-green-400 cursor-pointer" onClick={() => onToggleSection?.()}>
+          <span className="p-0.5 shrink-0 text-green-400 cursor-pointer" onClick={() => setExpanded(!expanded)}>
             <TerminalSquare size={14} />
           </span>
         ) : isBridge ? (
-          <span className="p-0.5 shrink-0 text-purple-400 cursor-pointer" onClick={() => onToggleSection?.()}>
+          <span className="p-0.5 shrink-0 text-purple-400 cursor-pointer" onClick={() => setExpanded(!expanded)}>
             <Radio size={14} />
           </span>
         ) : (
@@ -233,11 +233,11 @@ export function ContainerNode({
         ) : (
           <span
             className={`flex-1 text-sm text-gray-300 truncate px-1 select-none ${
-              (isSpecial && onToggleSection) || (!isSpecial && isRunning) ? 'cursor-pointer hover:text-gray-100' : 'cursor-default'
+              isSpecial || isRunning ? 'cursor-pointer hover:text-gray-100' : 'cursor-default'
             }`}
             onClick={() => {
-              if (isSpecial && onToggleSection) onToggleSection();
-              else if (!isSpecial && isRunning) setExpanded(!expanded);
+              if (isSpecial) setExpanded(!expanded);
+              else if (isRunning) setExpanded(!expanded);
             }}
             onDoubleClick={() => {
               if (!isSpecial) {
@@ -303,7 +303,7 @@ export function ContainerNode({
         )}
       </div>
 
-      {expanded && (isRunning || isSpecial) && !sectionCollapsed && (
+      {expanded && (isRunning || isSpecial) && (
         <div className="ml-5">
           {orderedSessions.map((session) => (
             <SessionItem
