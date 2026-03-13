@@ -790,6 +790,36 @@ class Bridge:
             })
         return windows
 
+    def _list_docker_windows(self, container, session_name: str) -> list[dict]:
+        """List windows for a tmux session inside a Docker container."""
+        result = container.exec_run(
+            ["tmux", "list-windows", "-t", session_name, "-F",
+             "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}"],
+            demux=True,
+        )
+        if result.exit_code != 0:
+            return []
+        stdout = result.output[0] if result.output[0] else b""
+        windows = []
+        for line in stdout.decode("utf-8", errors="replace").strip().splitlines():
+            line = line.strip()
+            if not line or "|" not in line:
+                continue
+            parts = line.split("|")
+            if len(parts) < 4:
+                continue
+            windows.append({
+                "index": int(parts[0]) if parts[0].isdigit() else 0,
+                "name": parts[1],
+                "active": parts[2] == "1",
+                "panes": int(parts[3]) if parts[3].isdigit() else 1,
+                "bell": parts[4] == "1" if len(parts) > 4 else False,
+                "activity": parts[5] == "1" if len(parts) > 5 else False,
+                "command": parts[6] if len(parts) > 6 else "",
+                "pane_status": parts[7] if len(parts) > 7 else "",
+            })
+        return windows
+
     async def _collect_docker_sessions(self) -> list[dict]:
         """Collect tmux sessions from Docker containers.
 
@@ -855,7 +885,7 @@ class Bridge:
                         "id": session_id,
                         "name": name,
                         "source": source,
-                        "windows": [],  # skip windows for docker discovery to keep it fast
+                        "windows": self._list_docker_windows(container, name),
                         "created": created,
                         "attached": attached,
                     })
