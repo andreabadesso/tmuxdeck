@@ -426,11 +426,19 @@ export function MainPage() {
         if (selectedSession) {
           e.preventDefault();
           if (isFoldedContainerSelection(selectedSession)) {
-            // Already folded container — no-op
+            // Container header selected → fold it if expanded
+            if (isContainerExpanded(selectedSession.containerId)) {
+              setContainerExpanded(selectedSession.containerId, false);
+            }
           } else if (isFoldedSelection(selectedSession)) {
-            // Folded session → fold the container
-            setContainerExpanded(selectedSession.containerId, false);
-            selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true });
+            if (isSessionExpanded(selectedSession.containerId, selectedSession.sessionId)) {
+              // Expanded session → fold the session
+              setSessionExpanded(selectedSession.containerId, selectedSession.sessionId, false);
+            } else {
+              // Folded session → fold the container
+              setContainerExpanded(selectedSession.containerId, false);
+              selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true });
+            }
           } else {
             // Window selected → fold the session
             const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
@@ -457,46 +465,53 @@ export function MainPage() {
       // Unfold current session / container
       if (matchesBinding(e, hotkeys.unfoldSession)) {
         if (selectedSession && isFoldedContainerSelection(selectedSession)) {
-          // Folded container → expand it, select first session (respecting its fold state)
-          e.preventDefault();
-          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
-          if (containers) {
-            const container = containers.find((c) => c.id === selectedSession.containerId);
-            if (container) {
-              setContainerExpanded(selectedSession.containerId, true);
-              const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
-              if (ordered.length > 0) {
-                const firstSession = ordered[0];
-                if (!isSessionExpanded(container.id, firstSession.id)) {
-                  selectFoldedSession({
-                    containerId: container.id,
-                    sessionName: firstSession.name,
-                    sessionId: firstSession.id,
-                    folded: true,
-                  });
-                } else {
-                  const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
-                  if (sortedWindows.length > 0) {
-                    selectSession(container.id, firstSession.name, sortedWindows[0].index);
+          if (!isContainerExpanded(selectedSession.containerId)) {
+            // Folded container → expand it, select first session (respecting its fold state)
+            e.preventDefault();
+            const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+            if (containers) {
+              const container = containers.find((c) => c.id === selectedSession.containerId);
+              if (container) {
+                setContainerExpanded(selectedSession.containerId, true);
+                const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
+                if (ordered.length > 0) {
+                  const firstSession = ordered[0];
+                  if (!isSessionExpanded(container.id, firstSession.id)) {
+                    selectFoldedSession({
+                      containerId: container.id,
+                      sessionName: firstSession.name,
+                      sessionId: firstSession.id,
+                      folded: true,
+                    });
+                  } else {
+                    const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
+                    if (sortedWindows.length > 0) {
+                      selectSession(container.id, firstSession.name, sortedWindows[0].index);
+                    }
                   }
                 }
               }
             }
           }
+          // else: already expanded → no-op
         } else if (selectedSession && isFoldedSelection(selectedSession)) {
-          e.preventDefault();
-          const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
-          if (containers) {
-            const container = containers.find((c) => c.id === selectedSession.containerId);
-            const session = container?.sessions.find((s) => s.id === selectedSession.sessionId);
-            if (session) {
-              setSessionExpanded(selectedSession.containerId, session.id, true);
-              const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
-              if (sortedWindows.length > 0) {
-                selectSession(selectedSession.containerId, session.name, sortedWindows[0].index);
+          if (!isSessionExpanded(selectedSession.containerId, selectedSession.sessionId)) {
+            // Folded session → expand it, select first window
+            e.preventDefault();
+            const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
+            if (containers) {
+              const container = containers.find((c) => c.id === selectedSession.containerId);
+              const session = container?.sessions.find((s) => s.id === selectedSession.sessionId);
+              if (session) {
+                setSessionExpanded(selectedSession.containerId, session.id, true);
+                const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
+                if (sortedWindows.length > 0) {
+                  selectSession(selectedSession.containerId, session.name, sortedWindows[0].index);
+                }
               }
             }
           }
+          // else: already expanded → no-op
         }
         return;
       }
@@ -508,15 +523,14 @@ export function MainPage() {
           const allItems: Selection[] = [];
           for (const c of containers) {
             if (c.status !== 'running' && c.containerType !== 'host' && c.containerType !== 'local' && c.containerType !== 'bridge') continue;
-            if (!isContainerExpanded(c.id)) {
-              allItems.push({ containerId: c.id, containerFolded: true });
-              continue;
-            }
+            // Always add container header (it's always visible)
+            allItems.push({ containerId: c.id, containerFolded: true });
+            if (!isContainerExpanded(c.id)) continue;
             const ordered = sortSessionsByOrder(c.sessions, queryClient.getQueryData<string[]>(['sessionOrder', c.id]) ?? []);
             for (const s of ordered) {
-              if (!isSessionExpanded(c.id, s.id)) {
-                allItems.push({ containerId: c.id, sessionName: s.name, sessionId: s.id, folded: true });
-              } else {
+              // Always add session header (visible when container is expanded)
+              allItems.push({ containerId: c.id, sessionName: s.name, sessionId: s.id, folded: true });
+              if (isSessionExpanded(c.id, s.id)) {
                 const sortedWindows = [...s.windows].sort((a, b) => a.index - b.index);
                 for (const w of sortedWindows) {
                   allItems.push({ containerId: c.id, sessionName: s.name, windowIndex: w.index });
