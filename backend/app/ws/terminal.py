@@ -594,14 +594,34 @@ async def _bridge_terminal(
             except (asyncio.TimeoutError, Exception):
                 pass  # Best-effort, don't block attach on config failure
 
+        # Wait for initial RESIZE from frontend so bridge PTY starts
+        # at the correct dimensions.
+        cols, rows = 80, 24
+        try:
+            msg = await asyncio.wait_for(websocket.receive(), timeout=3.0)
+            if msg.get("type") == "websocket.disconnect":
+                return
+            if "text" in msg:
+                text = msg["text"]
+                if text.startswith("RESIZE:"):
+                    parts = text.split(":")
+                    if len(parts) == 3:
+                        try:
+                            cols = int(parts[1])
+                            rows = int(parts[2])
+                        except ValueError:
+                            pass
+        except asyncio.TimeoutError:
+            logger.debug("Bridge RESIZE wait timed out, using defaults 80x24")
+
         # Request the bridge to attach to the tmux session
         result = await conn.request({
             "type": "attach",
             "session_name": session_name,
             "window_index": window_index,
             "channel_id": channel_id,
-            "cols": 80,
-            "rows": 24,
+            "cols": cols,
+            "rows": rows,
             "source": source,
         })
 
