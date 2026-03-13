@@ -138,6 +138,8 @@ async def _get_file_bridge(container_id: str, path: str) -> tuple[bytes, str]:
 
     data = base64.b64decode(result["data"])
     mime = result.get("mime_type", "application/octet-stream")
+    if mime == "application/octet-stream":
+        mime = _mime_from_extension(path)
     dl.info("files", f"Bridge file received: {path}", detail=f"size={len(data)} mime={mime}")
     return data, mime
 
