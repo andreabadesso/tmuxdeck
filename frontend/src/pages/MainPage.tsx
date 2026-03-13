@@ -21,6 +21,80 @@ import { sortSessionsByOrder } from '../utils/sessionOrder';
 import { DEFAULT_HOTKEYS, matchesBinding, matchesDoublePressKey } from '../utils/hotkeys';
 import { FoldedContainerPreview } from '../components/FoldedContainerPreview';
 
+/**
+ * Try to restore a saved selection from a folded container.
+ * Returns true if restoration succeeded, false to fall back to default behavior.
+ */
+function restoreContainerSelection(
+  container: Container,
+  foldedContainer: FoldedContainerTarget,
+  selectSession: (containerId: string, sessionName: string, windowIndex: number) => void,
+  selectFoldedSession: (target: FoldedSessionTarget) => void,
+  isSessionExpanded: (containerId: string, sessionId: string) => boolean,
+): boolean {
+  const saved = foldedContainer.lastSelection;
+  if (!saved) return false;
+
+  if (isFoldedSelection(saved)) {
+    // Saved selection was a folded session — find session by id
+    const session = container.sessions.find((s) => s.id === saved.sessionId);
+    if (!session) return false;
+    if (!isSessionExpanded(container.id, session.id)) {
+      // Session is still folded → restore folded session (preserving lastWindowIndex)
+      selectFoldedSession({
+        containerId: container.id,
+        sessionName: session.name,
+        sessionId: session.id,
+        folded: true,
+        lastWindowIndex: saved.lastWindowIndex,
+      });
+    } else {
+      // Session is now expanded → use lastWindowIndex if present, else first window
+      const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
+      const savedWin = saved.lastWindowIndex != null
+        ? sortedWindows.find((w) => w.index === saved.lastWindowIndex)
+        : undefined;
+      const targetIndex = savedWin ? savedWin.index : (sortedWindows.length > 0 ? sortedWindows[0].index : undefined);
+      if (targetIndex != null) {
+        selectSession(container.id, session.name, targetIndex);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (isWindowSelection(saved)) {
+    // Saved selection was an expanded window — find session by name
+    const session = container.sessions.find((s) => s.name === saved.sessionName);
+    if (!session) return false;
+    if (!isSessionExpanded(container.id, session.id)) {
+      // Session is now folded → select folded session, remembering the window
+      selectFoldedSession({
+        containerId: container.id,
+        sessionName: session.name,
+        sessionId: session.id,
+        folded: true,
+        lastWindowIndex: saved.windowIndex,
+      });
+    } else {
+      // Session is expanded — check if saved window still exists
+      const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
+      const savedWin = sortedWindows.find((w) => w.index === saved.windowIndex);
+      if (savedWin) {
+        selectSession(container.id, session.name, savedWin.index);
+      } else if (sortedWindows.length > 0) {
+        selectSession(container.id, session.name, sortedWindows[0].index);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function getInitialSession(): SessionTarget | null {
   try {
     const state = window.history.state?.usr as { selectSession?: SessionTarget } | null;
@@ -386,7 +460,8 @@ export function MainPage() {
         if (selectedSession) {
           e.preventDefault();
           setContainerExpanded(selectedSession.containerId, false);
-          selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true });
+          const lastSelection = isFoldedContainerSelection(selectedSession) ? undefined : selectedSession;
+          selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true, lastSelection });
         }
         return;
       }
@@ -399,20 +474,22 @@ export function MainPage() {
             const container = containers.find((c) => c.id === selectedSession.containerId);
             if (container) {
               setContainerExpanded(selectedSession.containerId, true);
-              const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
-              if (ordered.length > 0) {
-                const firstSession = ordered[0];
-                if (!isSessionExpanded(container.id, firstSession.id)) {
-                  selectFoldedSession({
-                    containerId: container.id,
-                    sessionName: firstSession.name,
-                    sessionId: firstSession.id,
-                    folded: true,
-                  });
-                } else {
-                  const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
-                  if (sortedWindows.length > 0) {
-                    selectSession(container.id, firstSession.name, sortedWindows[0].index);
+              if (!restoreContainerSelection(container, selectedSession, selectSession, selectFoldedSession, isSessionExpanded)) {
+                const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
+                if (ordered.length > 0) {
+                  const firstSession = ordered[0];
+                  if (!isSessionExpanded(container.id, firstSession.id)) {
+                    selectFoldedSession({
+                      containerId: container.id,
+                      sessionName: firstSession.name,
+                      sessionId: firstSession.id,
+                      folded: true,
+                    });
+                  } else {
+                    const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
+                    if (sortedWindows.length > 0) {
+                      selectSession(container.id, firstSession.name, sortedWindows[0].index);
+                    }
                   }
                 }
               }
@@ -437,7 +514,7 @@ export function MainPage() {
             } else {
               // Folded session → fold the container
               setContainerExpanded(selectedSession.containerId, false);
-              selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true });
+              selectFoldedContainer({ containerId: selectedSession.containerId, containerFolded: true, lastSelection: selectedSession });
             }
           } else {
             // Window selected → fold the session
@@ -454,6 +531,7 @@ export function MainPage() {
                     sessionName: session.name,
                     sessionId: session.id,
                     folded: true,
+                    lastWindowIndex: selectedSession.windowIndex,
                   });
                 }
               }
@@ -466,27 +544,31 @@ export function MainPage() {
       if (matchesBinding(e, hotkeys.unfoldSession)) {
         if (selectedSession && isFoldedContainerSelection(selectedSession)) {
           if (!isContainerExpanded(selectedSession.containerId)) {
-            // Folded container → expand it, select first session (respecting its fold state)
+            // Folded container → expand it, restore saved selection or select first session
             e.preventDefault();
             const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
             if (containers) {
               const container = containers.find((c) => c.id === selectedSession.containerId);
               if (container) {
                 setContainerExpanded(selectedSession.containerId, true);
-                const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
-                if (ordered.length > 0) {
-                  const firstSession = ordered[0];
-                  if (!isSessionExpanded(container.id, firstSession.id)) {
-                    selectFoldedSession({
-                      containerId: container.id,
-                      sessionName: firstSession.name,
-                      sessionId: firstSession.id,
-                      folded: true,
-                    });
-                  } else {
-                    const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
-                    if (sortedWindows.length > 0) {
-                      selectSession(container.id, firstSession.name, sortedWindows[0].index);
+                if (restoreContainerSelection(container, selectedSession, selectSession, selectFoldedSession, isSessionExpanded)) {
+                  // restored
+                } else {
+                  const ordered = sortSessionsByOrder(container.sessions, queryClient.getQueryData<string[]>(['sessionOrder', container.id]) ?? []);
+                  if (ordered.length > 0) {
+                    const firstSession = ordered[0];
+                    if (!isSessionExpanded(container.id, firstSession.id)) {
+                      selectFoldedSession({
+                        containerId: container.id,
+                        sessionName: firstSession.name,
+                        sessionId: firstSession.id,
+                        folded: true,
+                      });
+                    } else {
+                      const sortedWindows = [...firstSession.windows].sort((a, b) => a.index - b.index);
+                      if (sortedWindows.length > 0) {
+                        selectSession(container.id, firstSession.name, sortedWindows[0].index);
+                      }
                     }
                   }
                 }
@@ -496,7 +578,7 @@ export function MainPage() {
           // else: already expanded → no-op
         } else if (selectedSession && isFoldedSelection(selectedSession)) {
           if (!isSessionExpanded(selectedSession.containerId, selectedSession.sessionId)) {
-            // Folded session → expand it, select first window
+            // Folded session → expand it, restore saved window or select first
             e.preventDefault();
             const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
             if (containers) {
@@ -505,8 +587,12 @@ export function MainPage() {
               if (session) {
                 setSessionExpanded(selectedSession.containerId, session.id, true);
                 const sortedWindows = [...session.windows].sort((a, b) => a.index - b.index);
-                if (sortedWindows.length > 0) {
-                  selectSession(selectedSession.containerId, session.name, sortedWindows[0].index);
+                const savedWin = selectedSession.lastWindowIndex != null
+                  ? sortedWindows.find((w) => w.index === selectedSession.lastWindowIndex)
+                  : undefined;
+                const targetIndex = savedWin ? savedWin.index : (sortedWindows.length > 0 ? sortedWindows[0].index : undefined);
+                if (targetIndex != null) {
+                  selectSession(selectedSession.containerId, session.name, targetIndex);
                 }
               }
             }

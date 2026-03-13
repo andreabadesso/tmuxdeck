@@ -12,11 +12,13 @@ export interface FoldedSessionTarget {
   sessionName: string;
   sessionId: string;
   folded: true;
+  lastWindowIndex?: number;
 }
 
 export interface FoldedContainerTarget {
   containerId: string;
   containerFolded: true;
+  lastSelection?: SessionTarget | FoldedSessionTarget;
 }
 
 export type Selection = SessionTarget | FoldedSessionTarget | FoldedContainerTarget;
