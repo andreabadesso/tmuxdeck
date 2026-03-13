@@ -578,6 +578,22 @@ async def _bridge_terminal(
     source = bridge_source_from_container(container_id)
 
     try:
+        # Set tmux options on the remote server before attaching
+        for tmux_option_cmd in [
+            ["tmux", "set-option", "-s", "extended-keys", "always"],
+            ["tmux", "set-option", "-g", "allow-passthrough", "on"],
+            ["tmux", "set-option", "-g", "monitor-activity", "on"],
+            ["tmux", "set-option", "-g", "activity-action", "none"],
+        ]:
+            try:
+                await conn.request({
+                    "type": "tmux_cmd",
+                    "cmd": tmux_option_cmd,
+                    "source": source,
+                }, timeout=5)
+            except (asyncio.TimeoutError, Exception):
+                pass  # Best-effort, don't block attach on config failure
+
         # Request the bridge to attach to the tmux session
         result = await conn.request({
             "type": "attach",

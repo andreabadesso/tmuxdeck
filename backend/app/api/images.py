@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import time
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
+from ..services.bridge_manager import BridgeManager, bridge_source_from_container, is_bridge
 from ..services.docker_manager import DockerManager
 from ..services.tmux_manager import _is_host, _is_local
 
@@ -42,6 +44,21 @@ async def upload_image(container_id: str, file: UploadFile):
         os.makedirs(DEST_DIR, exist_ok=True)
         with open(dest_path, "wb") as f:
             f.write(content)
+    elif is_bridge(container_id):
+        bm = BridgeManager.get()
+        conn = bm.get_bridge_for_container(container_id)
+        if not conn:
+            raise HTTPException(502, "Bridge not connected")
+        source = bridge_source_from_container(container_id)
+        encoded = base64.b64encode(content).decode("ascii")
+        result = await conn.request({
+            "type": "file_write",
+            "path": dest_path,
+            "data": encoded,
+            "source": source,
+        }, timeout=30)
+        if "error" in result:
+            raise HTTPException(500, result["error"])
     else:
         dm = DockerManager.get()
         await dm.put_file(container_id, DEST_DIR, filename, content)
