@@ -18,6 +18,7 @@ class BridgeConfig:
     docker_socket: str = ""  # path to docker socket for container tmux
     docker_label: str = ""  # docker label filter for containers
     ipv6: bool = False  # use IPv6 instead of IPv4
+    host_mount_root: str = ""  # prefix path for host filesystem access in Docker
     session_report_interval: float = 5.0
     reconnect_min: float = 5.0
     reconnect_max: float = 60.0
@@ -60,6 +61,10 @@ def parse_config() -> BridgeConfig:
         help="Use IPv6 instead of IPv4",
     )
     parser.add_argument(
+        "--host-mount-root", default="",
+        help="Prefix path for host filesystem access in Docker (e.g. /mnt/host)",
+    )
+    parser.add_argument(
         "--report-interval", type=float, default=5.0,
         help="Session report interval in seconds (default: 5)",
     )
@@ -82,5 +87,6 @@ def parse_config() -> BridgeConfig:
         docker_socket=args.docker_socket or os.environ.get("DOCKER_SOCKET", ""),
         docker_label=args.docker_label or os.environ.get("DOCKER_LABEL", ""),
         ipv6=args.ipv6,
+        host_mount_root=args.host_mount_root or os.environ.get("HOST_MOUNT_ROOT", ""),
         session_report_interval=args.report_interval,
     )

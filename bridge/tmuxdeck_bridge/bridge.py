@@ -35,6 +35,12 @@ class Bridge:
         self._name_to_source: dict[str, str] = {}  # session_name → source
         self._id_to_source: dict[str, str] = {}  # session_id → source
 
+    def _host_path(self, path: str) -> str:
+        """Prepend host_mount_root for host file access in Docker."""
+        if self.config.host_mount_root:
+            return self.config.host_mount_root.rstrip("/") + path
+        return path
+
     def _configured_sources(self) -> list[str]:
         """Return the list of configured session sources.
 
@@ -76,6 +82,14 @@ class Bridge:
         if self.config.docker_socket:
             sources.append(f"docker ({self.config.docker_socket})")
         logger.info("Configured sources: %s", ", ".join(sources) if sources else "NONE")
+
+        # Check host_mount_root
+        if self.config.host_mount_root:
+            mount_root = Path(self.config.host_mount_root)
+            if mount_root.is_dir():
+                logger.info("Host mount root EXISTS: %s", mount_root)
+            else:
+                logger.warning("Host mount root NOT FOUND: %s — host file I/O will fail", mount_root)
 
         # Check host tmux socket
         if self.config.host_tmux_socket:
@@ -298,6 +312,8 @@ class Bridge:
             }))
         elif msg_type == "file_read":
             await self._handle_file_read(msg)
+        elif msg_type == "file_write":
+            await self._handle_file_write(msg)
         elif msg_type == "ping":
             await self._ws.send(json.dumps({"type": "pong"}))
         else:
@@ -423,7 +439,8 @@ class Bridge:
             if source.startswith("docker:"):
                 data, mime = await self._read_file_docker(source, file_path)
             else:
-                data, mime = await self._read_file_local(source, file_path)
+                resolved = self._host_path(file_path) if source == "host" else file_path
+                data, mime = await self._read_file_local(source, resolved)
 
             encoded = base64.b64encode(data).decode("ascii")
             logger.info("file_read success: path=%s size=%d mime=%s", file_path, len(data), mime)
@@ -439,6 +456,70 @@ class Bridge:
             await self._ws.send(json.dumps({
                 "type": "file_result", "id": req_id, "error": str(e),
             }))
+
+    async def _handle_file_write(self, msg: dict) -> None:
+        """Write base64-encoded data to a file."""
+        req_id = msg.get("id", "")
+        file_path = msg.get("path", "")
+        data_b64 = msg.get("data", "")
+        source = self._resolve_source(msg)
+
+        logger.info("file_write request: path=%s source=%s", file_path, source)
+
+        if not file_path or not os.path.isabs(file_path):
+            await self._ws.send(json.dumps({
+                "type": "file_write_result", "id": req_id,
+                "error": "Path must be absolute",
+            }))
+            return
+
+        try:
+            data = base64.b64decode(data_b64)
+
+            if source.startswith("docker:"):
+                await self._write_file_docker(source, file_path, data)
+            else:
+                resolved = self._host_path(file_path) if source == "host" else file_path
+                await self._write_file_local(resolved, data)
+
+            logger.info("file_write success: path=%s size=%d", file_path, len(data))
+            await self._ws.send(json.dumps({
+                "type": "file_write_result",
+                "id": req_id,
+                "size": len(data),
+            }))
+        except Exception as e:
+            logger.error("file_write failed (source=%s, path=%s): %s", source, file_path, e)
+            await self._ws.send(json.dumps({
+                "type": "file_write_result", "id": req_id, "error": str(e),
+            }))
+
+    async def _write_file_local(self, file_path: str, data: bytes) -> None:
+        """Write a file to the local filesystem."""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            f.write(data)
+
+    async def _write_file_docker(self, source: str, file_path: str, data: bytes) -> None:
+        """Write a file into a Docker container."""
+        container_id = source.split(":", 1)[1]
+        dir_path = os.path.dirname(file_path)
+
+        docker_base = ["docker"]
+        if self.config.docker_socket:
+            docker_base += ["-H", f"unix://{self.config.docker_socket}"]
+
+        proc = await asyncio.create_subprocess_exec(
+            *docker_base, "exec", "-i", container_id,
+            "sh", "-c", f"mkdir -p '{dir_path}' && cat > '{file_path}'",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(input=data), timeout=30)
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace").strip()
+            raise OSError(error or f"Failed to write {file_path}")
 
     async def _read_file_local(self, source: str, file_path: str) -> tuple[bytes, str]:
         """Read a file from local or host filesystem."""
