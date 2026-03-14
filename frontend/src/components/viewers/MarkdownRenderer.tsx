@@ -1,6 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface MarkdownRendererProps {
   content: string;
@@ -14,17 +16,24 @@ const components: Components = {
   h5: ({ children }) => <h5 className="md-h5">{children}</h5>,
   h6: ({ children }) => <h6 className="md-h6">{children}</h6>,
   code: ({ className, children, ...props }) => {
-    const isBlock = className?.startsWith('language-');
-    if (isBlock) {
+    const match = className?.match(/language-(\w+)/);
+    if (match) {
       return (
-        <pre className="md-code-block">
-          <code className={className} {...props}>{children}</code>
-        </pre>
+        <SyntaxHighlighter
+          style={oneDark}
+          language={match[1]}
+          PreTag="div"
+          customStyle={{ margin: 0, borderRadius: '0.5rem' }}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
       );
     }
     return <code className="md-inline-code" {...props}>{children}</code>;
   },
-  pre: ({ children }) => <>{children}</>,
+  pre: ({ children }) => (
+    <div className="md-code-block">{children}</div>
+  ),
   a: ({ children, href }) => (
     <a href={href} target="_blank" rel="noopener noreferrer" className="md-link">
       {children}
@@ -52,6 +61,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           [&_p]:mb-3 [&_p]:leading-relaxed [&_p]:text-gray-300
           [&_.md-code-block]:bg-gray-800 [&_.md-code-block]:rounded-lg [&_.md-code-block]:p-4 [&_.md-code-block]:my-4 [&_.md-code-block]:overflow-x-auto [&_.md-code-block]:text-sm [&_.md-code-block]:text-gray-300 [&_.md-code-block]:font-mono
           [&_.md-inline-code]:bg-gray-800 [&_.md-inline-code]:rounded [&_.md-inline-code]:px-1.5 [&_.md-inline-code]:py-0.5 [&_.md-inline-code]:text-sm [&_.md-inline-code]:text-pink-400 [&_.md-inline-code]:font-mono
+          [&_.md-code-block_.md-inline-code]:text-gray-300 [&_.md-code-block_.md-inline-code]:bg-transparent [&_.md-code-block_.md-inline-code]:p-0
           [&_.md-link]:text-blue-400 [&_.md-link]:underline [&_.md-link]:hover:text-blue-300
           [&_.md-ul]:list-disc [&_.md-ul]:pl-6 [&_.md-ul]:mb-3 [&_.md-ul]:text-gray-300
           [&_.md-ol]:list-decimal [&_.md-ol]:pl-6 [&_.md-ol]:mb-3 [&_.md-ol]:text-gray-300
