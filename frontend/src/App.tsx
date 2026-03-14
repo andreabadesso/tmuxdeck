@@ -26,7 +26,7 @@ const queryClient = new QueryClient({
 });
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isPinSet, isLocked, isLoading, invalidateAuth } = useAuth();
+  const { isAuthenticated, isPinSet, isLocked, webauthnEnabled, isLoading, invalidateAuth } = useAuth();
 
   // Register the auth-lost callback so httpClient can trigger re-render
   useEffect(() => {
@@ -47,7 +47,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <PinScreen mode="login" onSuccess={invalidateAuth} locked={isLocked} />;
+    return <PinScreen mode="login" onSuccess={invalidateAuth} locked={isLocked} webauthnEnabled={webauthnEnabled} />;
   }
 
   return <>{children}</>;

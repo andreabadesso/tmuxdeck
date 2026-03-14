@@ -15,6 +15,7 @@ import type {
   CreateWindowRequest,
   TmuxSession,
   TmuxWindow,
+  WebAuthnCredential,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -161,6 +162,67 @@ export async function changePin(currentPin: string, newPin: string): Promise<voi
     throw new Error(data.detail || 'Change failed');
   }
   cachedPin = newPin;
+}
+
+// --- WebAuthn API functions ---
+
+export async function webauthnRegisterOptions(): Promise<unknown> {
+  const res = await fetch(`${BASE}/auth/webauthn/register/options`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: 'Failed to get options' }));
+    throw new Error(data.detail || 'Failed to get registration options');
+  }
+  return res.json();
+}
+
+export async function webauthnRegisterVerify(name: string, credential: unknown): Promise<void> {
+  const res = await fetch(`${BASE}/auth/webauthn/register/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, credential }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: 'Registration failed' }));
+    throw new Error(data.detail || 'Registration failed');
+  }
+}
+
+export async function webauthnLoginOptions(): Promise<unknown> {
+  const res = await fetch(`${BASE}/auth/webauthn/login/options`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: 'Failed to get options' }));
+    throw new Error(data.detail || 'Failed to get login options');
+  }
+  return res.json();
+}
+
+export async function webauthnLoginVerify(credential: unknown): Promise<void> {
+  const res = await fetch(`${BASE}/auth/webauthn/login/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: 'Authentication failed' }));
+    const err = new Error(data.detail || 'Authentication failed') as LoginError;
+    err.remainingAttempts = data.remainingAttempts;
+    err.retryAfter = data.retryAfter;
+    err.locked = data.locked;
+    err.statusCode = res.status;
+    throw err;
+  }
+}
+
+export async function listWebAuthnCredentials(): Promise<WebAuthnCredential[]> {
+  return request<{ credentials: WebAuthnCredential[] }>('/auth/webauthn/credentials').then(
+    (r) => r.credentials,
+  );
+}
+
+export async function removeWebAuthnCredential(id: string): Promise<void> {
+  await request<void>(`/auth/webauthn/credentials/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 export const httpApi: ApiClient = {

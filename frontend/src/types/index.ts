@@ -149,6 +149,14 @@ export interface AuthStatus {
   authenticated: boolean;
   pinSet: boolean;
   locked?: boolean;
+  webauthnEnabled?: boolean;
+}
+
+export interface WebAuthnCredential {
+  id: string;
+  name: string;
+  createdAt: string;
+  transports: string[];
 }
 
 export interface CreateSessionRequest {

@@ -1,10 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Plus, X, LogOut, KeyRound, RefreshCw } from 'lucide-react';
+import { Save, Plus, X, LogOut, KeyRound, RefreshCw, Trash2, Shield } from 'lucide-react';
 import { api } from '../api/client';
-import { changePin, logout } from '../api/httpClient';
+import {
+  changePin,
+  logout,
+  webauthnRegisterOptions,
+  webauthnRegisterVerify,
+  listWebAuthnCredentials,
+  removeWebAuthnCredential,
+} from '../api/httpClient';
+import { startRegistration } from '@simplewebauthn/browser';
+import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser/esm/types';
 import { SettingsTabs } from '../components/SettingsTabs';
+import type { WebAuthnCredential } from '../types';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -209,6 +219,8 @@ function SecuritySection() {
           Change PIN
         </button>
 
+        <WebAuthnSection />
+
         <div className="border-t border-gray-800 pt-4">
           <button
             onClick={handleLogout}
@@ -224,6 +236,114 @@ function SecuritySection() {
         <ChangePinScreen onClose={() => setChangePinOpen(false)} />
       )}
     </section>
+  );
+}
+
+function WebAuthnSection() {
+  const queryClient = useQueryClient();
+  const [keyName, setKeyName] = useState('');
+  const [registering, setRegistering] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const { data: credentials = [], isLoading } = useQuery({
+    queryKey: ['webauthn-credentials'],
+    queryFn: listWebAuthnCredentials,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => removeWebAuthnCredential(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webauthn-credentials'] });
+      queryClient.invalidateQueries({ queryKey: ['auth'] });
+    },
+  });
+
+  const handleRegister = async () => {
+    setError('');
+    setSuccess('');
+    setRegistering(true);
+    try {
+      const options = await webauthnRegisterOptions();
+      const credential = await startRegistration({ optionsJSON: options as PublicKeyCredentialCreationOptionsJSON });
+      await webauthnRegisterVerify(keyName || 'Security Key', credential);
+      setSuccess('Security key registered successfully');
+      setKeyName('');
+      queryClient.invalidateQueries({ queryKey: ['webauthn-credentials'] });
+      queryClient.invalidateQueries({ queryKey: ['auth'] });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        setError('Registration cancelled');
+      } else {
+        setError(err instanceof Error ? err.message : 'Registration failed');
+      }
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-gray-800 pt-4">
+      <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-1.5">
+        <Shield size={14} />
+        Security Keys (WebAuthn)
+      </h3>
+      <p className="text-xs text-gray-500 mb-3">
+        Register a YubiKey or other FIDO2 security key as an alternative login method.
+      </p>
+
+      {/* Registered keys list */}
+      {credentials.length > 0 && (
+        <div className="space-y-1.5 mb-3">
+          {credentials.map((cred: WebAuthnCredential) => (
+            <div
+              key={cred.id}
+              className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2"
+            >
+              <div>
+                <span className="text-sm text-gray-200">{cred.name}</span>
+                <span className="text-xs text-gray-500 ml-2">
+                  {new Date(cred.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <button
+                onClick={() => deleteMutation.mutate(cred.id)}
+                disabled={deleteMutation.isPending}
+                className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                title="Remove key"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isLoading && (
+        <p className="text-xs text-gray-500 mb-3">Loading credentials...</p>
+      )}
+
+      {/* Register new key */}
+      <div className="flex items-center gap-2">
+        <input
+          value={keyName}
+          onChange={(e) => setKeyName(e.target.value)}
+          placeholder="Key name (optional)"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+        />
+        <button
+          onClick={handleRegister}
+          disabled={registering}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+        >
+          <Plus size={14} />
+          {registering ? 'Waiting...' : 'Register Key'}
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      {success && <p className="text-xs text-green-400 mt-2">{success}</p>}
+    </div>
   );
 }
 
@@ -264,7 +384,7 @@ function ChangePinScreen({ onClose }: { onClose: () => void }) {
     if (currentValue.length === 4 && !loading) {
       formRef.current?.requestSubmit();
     }
-  }, [currentPin, newPin, confirmPin, step, loading]);
+  }, [currentPin, newPin, confirmPin, currentValue.length, step, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

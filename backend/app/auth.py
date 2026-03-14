@@ -78,3 +78,66 @@ def get_pin_hash() -> str | None:
 
 def set_pin_hash(pin_hash: str) -> None:
     store.update_settings({"pinHash": pin_hash})
+
+
+# --- WebAuthn challenge store (in-memory, same pattern as sessions) ---
+
+CHALLENGE_TTL = 120  # seconds
+
+_webauthn_challenges: dict[str, tuple[bytes, float]] = {}
+
+
+def store_challenge(key: str, challenge: bytes) -> None:
+    """Store a WebAuthn challenge with a TTL."""
+    _webauthn_challenges[key] = (challenge, time.time() + CHALLENGE_TTL)
+
+
+def retrieve_challenge(key: str) -> bytes | None:
+    """Retrieve and consume a one-time challenge. Returns None if expired/missing."""
+    entry = _webauthn_challenges.pop(key, None)
+    if entry is None:
+        return None
+    challenge, expiry = entry
+    if time.time() > expiry:
+        return None
+    return challenge
+
+
+# --- WebAuthn credential helpers ---
+
+
+def get_webauthn_credentials() -> list[dict[str, Any]]:
+    """Return list of stored WebAuthn credentials."""
+    return _get_settings().get("webauthnCredentials", [])
+
+
+def add_webauthn_credential(credential: dict[str, Any]) -> None:
+    """Append a new WebAuthn credential to settings."""
+    creds = get_webauthn_credentials()
+    creds.append(credential)
+    store.update_settings({"webauthnCredentials": creds})
+
+
+def remove_webauthn_credential(credential_id: str) -> bool:
+    """Remove a credential by its ID. Returns True if found and removed."""
+    creds = get_webauthn_credentials()
+    new_creds = [c for c in creds if c["id"] != credential_id]
+    if len(new_creds) == len(creds):
+        return False
+    store.update_settings({"webauthnCredentials": new_creds})
+    return True
+
+
+def update_webauthn_sign_count(credential_id: str, new_count: int) -> None:
+    """Update the sign count for a credential after successful authentication."""
+    creds = get_webauthn_credentials()
+    for c in creds:
+        if c["id"] == credential_id:
+            c["signCount"] = new_count
+            break
+    store.update_settings({"webauthnCredentials": creds})
+
+
+def has_webauthn_credentials() -> bool:
+    """Return True if any WebAuthn credentials are registered."""
+    return len(get_webauthn_credentials()) > 0

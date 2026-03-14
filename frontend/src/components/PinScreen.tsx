@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { loginWithPin, setupPin } from '../api/httpClient';
+import { loginWithPin, setupPin, webauthnLoginOptions, webauthnLoginVerify } from '../api/httpClient';
 import type { LoginError } from '../api/httpClient';
+import { startAuthentication } from '@simplewebauthn/browser';
+import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser/esm/types';
 
 interface PinScreenProps {
   mode: 'setup' | 'login';
   onSuccess: () => void;
   locked?: boolean;
+  webauthnEnabled?: boolean;
 }
 
-export function PinScreen({ mode, onSuccess, locked: initialLocked }: PinScreenProps) {
+export function PinScreen({ mode, onSuccess, locked: initialLocked, webauthnEnabled }: PinScreenProps) {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [step, setStep] = useState<'enter' | 'confirm'>(mode === 'setup' ? 'enter' : 'enter');
@@ -81,6 +84,30 @@ export function PinScreen({ mode, onSuccess, locked: initialLocked }: PinScreenP
     }
     setError(loginErr.message || 'Login failed');
   }, []);
+
+  const [webauthnLoading, setWebauthnLoading] = useState(false);
+
+  const handleWebAuthnLogin = useCallback(async () => {
+    setError('');
+    setWebauthnLoading(true);
+    try {
+      const options = await webauthnLoginOptions();
+      const credential = await startAuthentication({ optionsJSON: options as PublicKeyCredentialRequestOptionsJSON });
+      await webauthnLoginVerify(credential);
+      onSuccess();
+    } catch (err) {
+      const loginErr = err as LoginError;
+      if (loginErr.locked) {
+        setIsLocked(true);
+      } else if (loginErr.retryAfter && loginErr.retryAfter > 0) {
+        setRetryAfter(Math.ceil(loginErr.retryAfter));
+      } else {
+        setError(loginErr.message || 'Security key authentication failed');
+      }
+    } finally {
+      setWebauthnLoading(false);
+    }
+  }, [onSuccess]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,6 +262,22 @@ export function PinScreen({ mode, onSuccess, locked: initialLocked }: PinScreenP
                     : 'Unlock'
               }
             </button>
+
+            {mode === 'login' && webauthnEnabled && (
+              <button
+                type="button"
+                disabled={webauthnLoading || isDisabled}
+                onClick={handleWebAuthnLogin}
+                className="w-full py-2.5 rounded-lg text-sm font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="2" y="6" width="20" height="12" rx="2" />
+                  <circle cx="8" cy="12" r="2" />
+                  <path d="M14 10h4M14 14h4" />
+                </svg>
+                {webauthnLoading ? 'Waiting for key...' : 'Use Security Key'}
+              </button>
+            )}
           </>
         )}
 

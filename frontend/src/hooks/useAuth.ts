@@ -18,6 +18,7 @@ export function useAuth() {
     isAuthenticated: data?.authenticated ?? false,
     isPinSet: data?.pinSet ?? false,
     isLocked: data?.locked ?? false,
+    webauthnEnabled: data?.webauthnEnabled ?? false,
     isLoading,
     invalidateAuth,
   };
