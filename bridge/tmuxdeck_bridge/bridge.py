@@ -184,6 +184,7 @@ class Bridge:
                     max_size=32 * 1024 * 1024,
                     ping_interval=30,
                     ping_timeout=10,
+                    compression="deflate",
                     family=socket.AF_INET6 if self.config.ipv6 else socket.AF_INET,
                 ) as ws:
                     self._ws = ws

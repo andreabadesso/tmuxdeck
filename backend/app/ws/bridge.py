@@ -96,7 +96,7 @@ async def bridge_ws(websocket: WebSocket):
                 if len(data) < 2:
                     continue
                 channel_id = struct.unpack(">H", data[:2])[0]
-                payload = data[2:]
+                payload = memoryview(data)[2:]
                 user_ws = conn.get_terminal_ws(channel_id)
                 if user_ws:
                     try:

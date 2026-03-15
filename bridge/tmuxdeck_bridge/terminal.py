@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_READ_BUF = 65536  # Large buffer to reduce frame count over double-hop WS relay
+_COALESCE_MS = 0.002  # 2ms coalescing window — imperceptible but batches burst writes
+_BACKPRESSURE_CAP = 262144  # 256KB max per coalesced batch
+
 
 class TerminalSession:
     """Manages a single PTY running tmux attach, connected to a bridge channel."""
@@ -55,19 +59,78 @@ class TerminalSession:
         self._task = asyncio.create_task(self._read_loop())
 
     async def _read_loop(self) -> None:
-        """Read from PTY and send binary frames with channel header to backend."""
+        """Read from PTY and send binary frames with channel header to backend.
+
+        Uses non-blocking I/O with a 2ms coalescing window to batch
+        small writes into fewer WebSocket frames, reducing overhead
+        on the double-hop relay path.
+        """
         loop = asyncio.get_event_loop()
         header = struct.pack(">H", self.channel_id)
+        fd = self._master_fd
+
+        # Set fd to non-blocking
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+        ready = asyncio.Event()
+
+        def _on_readable():
+            ready.set()
+
+        loop.add_reader(fd, _on_readable)
         try:
             while True:
-                data = await loop.run_in_executor(None, os.read, self._master_fd, 4096)
-                if not data:
-                    break
-                await self._ws.send(header + data)
+                ready.clear()
+                await ready.wait()
+
+                # Drain all immediately available data
+                chunks = []
+                total = 0
+                while total < _BACKPRESSURE_CAP:
+                    try:
+                        chunk = os.read(fd, _READ_BUF)
+                        if not chunk:
+                            if chunks:
+                                await self._ws.send(header + b"".join(chunks))
+                            return
+                        chunks.append(chunk)
+                        total += len(chunk)
+                    except BlockingIOError:
+                        break
+
+                if not chunks:
+                    continue
+
+                # Coalescing window: wait up to 2ms for more data
+                if total < _BACKPRESSURE_CAP:
+                    try:
+                        ready.clear()
+                        await asyncio.wait_for(ready.wait(), timeout=_COALESCE_MS)
+                        # More data arrived — drain again
+                        while total < _BACKPRESSURE_CAP:
+                            try:
+                                chunk = os.read(fd, _READ_BUF)
+                                if not chunk:
+                                    await self._ws.send(header + b"".join(chunks))
+                                    return
+                                chunks.append(chunk)
+                                total += len(chunk)
+                            except BlockingIOError:
+                                break
+                    except asyncio.TimeoutError:
+                        pass
+
+                await self._ws.send(header + b"".join(chunks))
         except OSError:
             pass
         except Exception as e:
             logger.debug("Terminal read loop error (ch %d): %s", self.channel_id, e)
+        finally:
+            try:
+                loop.remove_reader(fd)
+            except Exception:
+                pass
 
     def write(self, data: bytes) -> None:
         """Write data to the PTY (terminal input from user)."""
