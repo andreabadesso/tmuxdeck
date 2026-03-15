@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BIND_HOST:-127.0.0.1}:8000:8000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - backend-data:/data
@@ -11,16 +11,21 @@ services:
       - /tmp/tmux-${HOST_UID:-1000}:/tmp/tmux-host
     environment:
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
 
   frontend:
     build: ./frontend
     ports:
-      - "127.0.0.1:3000:80"
+      - "${BIND_HOST:-127.0.0.1}:3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
