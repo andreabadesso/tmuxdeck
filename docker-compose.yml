@@ -11,12 +11,6 @@ services:
       - /tmp/tmux-${HOST_UID:-1000}:/tmp/tmux-host
     environment:
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
     restart: unless-stopped
 
   frontend:
@@ -24,8 +18,7 @@ services:
     ports:
       - "${BIND_HOST:-127.0.0.1}:3000:80"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     restart: unless-stopped
 
 volumes:
