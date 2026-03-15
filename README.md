@@ -40,16 +40,21 @@ If you run multiple Docker containers with tmux sessions inside them — for AI 
 ```bash
 git clone https://github.com/msbrogli/tmuxdeck.git
 cd tmuxdeck
-cp .env.example .env
-docker compose up
+docker compose up -d
 ```
 
-Open **http://localhost:3000**. The backend runs on port 8000 behind the nginx proxy.
+Open **http://localhost:3000**. The backend API runs on port 8000.
 
-The backend needs access to the Docker socket to manage containers. To also manage **host tmux sessions**, pass your UID:
+To also manage **host tmux sessions**, pass your UID:
 
 ```bash
-HOST_UID=$(id -u) docker compose up
+HOST_UID=$(id -u) docker compose up -d
+```
+
+To listen on all interfaces (e.g. for access from other machines):
+
+```bash
+BIND_HOST=0.0.0.0 docker compose up -d
 ```
 
 ### Local Development
