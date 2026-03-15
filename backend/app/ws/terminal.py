@@ -8,6 +8,7 @@ import logging
 import os
 import pty
 import random
+import time
 import signal
 import struct
 import termios
@@ -119,6 +120,17 @@ async def _check_tmux_mouse(tmux_prefix: list[str]) -> bool:
     return await _get_tmux_option(tmux_prefix, "mouse") == "on"
 
 
+async def _tmux_session_exists(tmux_prefix: list[str], target: str) -> bool:
+    """Check whether a tmux session/window target exists."""
+    proc = await asyncio.create_subprocess_exec(
+        *tmux_prefix, "has-session", "-t", target,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        env=_clean_env(),
+    )
+    return await proc.wait() == 0
+
+
 async def _check_tmux_bell(tmux_prefix: list[str]) -> dict[str, str] | None:
     """Return dict of bell-related problems, or None if everything is fine."""
     problems: dict[str, str] = {}
@@ -167,8 +179,11 @@ async def _pty_terminal(
             await websocket.send_text(f"BELL_WARNING:{json.dumps(bell_problems)}")
 
     loop = asyncio.get_event_loop()
+    start_time = time.monotonic()
+    sent_data = False
 
     async def pty_to_ws() -> None:
+        nonlocal sent_data
         pending_sends = 0
         max_pending = 32
         try:
@@ -179,6 +194,7 @@ async def _pty_terminal(
                 data = await loop.run_in_executor(None, os.read, master_fd, 16384)
                 if not data:
                     break
+                sent_data = True
                 pending_sends += 1
                 try:
                     await websocket.send_bytes(data)
@@ -573,6 +589,13 @@ async def _pty_terminal(
         )
         for task in pending:
             task.cancel()
+        # Fast-exit heuristic: if the PTY closed almost immediately with no
+        # data sent, the session likely vanished between has-session and attach.
+        elapsed = time.monotonic() - start_time
+        if elapsed < 2.0 and not sent_data:
+            with contextlib.suppress(Exception):
+                await websocket.send_text("SESSION_GONE:")
+                await websocket.close(code=4404, reason="Session no longer exists")
     finally:
         with contextlib.suppress(OSError):
             os.close(master_fd)
@@ -649,7 +672,8 @@ async def _bridge_terminal(
         if result.get("type") == "attach_error":
             error = result.get("reason", "Unknown error")
             logger.error("Bridge attach failed: %s", error)
-            await websocket.send_text(f"Bridge attach error: {error}\r\n")
+            await websocket.send_text("SESSION_GONE:")
+            await websocket.close(code=4404, reason=error)
             return
 
         # Register this user WS so bridge binary frames get routed here
@@ -879,6 +903,10 @@ async def terminal_ws(
     if _is_local(container_id):
         try:
             tmux_prefix = ["tmux"]
+            if not await _tmux_session_exists(tmux_prefix, target):
+                await websocket.send_text("SESSION_GONE:")
+                await websocket.close(code=4404, reason="Session no longer exists")
+                return
             # Enable CSI u extended keys (e.g. Shift+Enter) before attaching
             await _set_tmux_extended_keys(tmux_prefix)
             # Enable DCS passthrough for tmuxdeck-open
@@ -902,6 +930,10 @@ async def terminal_ws(
         try:
             socket = config.host_tmux_socket
             tmux_prefix = ["tmux", "-S", socket]
+            if not await _tmux_session_exists(tmux_prefix, target):
+                await websocket.send_text("SESSION_GONE:")
+                await websocket.close(code=4404, reason="Session no longer exists")
+                return
             # Enable CSI u extended keys (e.g. Shift+Enter) before attaching
             await _set_tmux_extended_keys(tmux_prefix)
             # Enable DCS passthrough for tmuxdeck-open
@@ -926,6 +958,19 @@ async def terminal_ws(
     sock = None
 
     try:
+        # Check if the tmux session exists before attaching
+        try:
+            sessions_out = await dm.exec_command(container_id, ["tmux", "list-sessions", "-F", "#{session_name}"])
+            session_target = target.split(":")[0]
+            if session_target not in sessions_out.strip().splitlines():
+                await websocket.send_text("SESSION_GONE:")
+                await websocket.close(code=4404, reason="Session no longer exists")
+                return
+        except Exception:
+            await websocket.send_text("SESSION_GONE:")
+            await websocket.close(code=4404, reason="Container or session unavailable")
+            return
+
         # Enable CSI u extended keys (e.g. Shift+Enter) before attaching
         await dm.exec_command(container_id, ["tmux", "set-option", "-s", "extended-keys", "always"])
 

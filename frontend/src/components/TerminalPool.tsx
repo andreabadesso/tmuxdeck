@@ -22,6 +22,8 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
     const [refsMap] = useState(() => new Map<string, React.RefObject<TerminalHandle | null>>());
     // Track which terminals have received their first data
     const [readyKeys, setReadyKeys] = useState<Set<string>>(() => new Set());
+    // Track which terminals have been detected as gone (session removed)
+    const [goneKeys, setGoneKeys] = useState<Set<string>>(() => new Set());
 
     // Sync refs map with entries (add new, remove stale)
     const currentKeys = new Set(entries.map((e) => e.key));
@@ -36,9 +38,20 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
       }
     }
 
-    // Clean up readyKeys for evicted entries
+    // Clean up readyKeys and goneKeys for evicted entries
     useEffect(() => {
       setReadyKeys(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const key of next) {
+          if (!currentKeys.has(key)) {
+            next.delete(key);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      setGoneKeys(prev => {
         const next = new Set(prev);
         let changed = false;
         for (const key of next) {
@@ -77,7 +90,8 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
       clearBufferActive: () => getActiveRef()?.clearBuffer(),
     }), [getActiveRef]);
 
-    const showLoading = activeKey != null && !readyKeys.has(activeKey);
+    const isActiveGone = activeKey != null && goneKeys.has(activeKey);
+    const showLoading = activeKey != null && !readyKeys.has(activeKey) && !isActiveGone;
 
     return (
       <div className="relative w-full h-full">
@@ -107,6 +121,12 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                   next.add(entry.key);
                   return next;
                 })}
+                onSessionGone={() => setGoneKeys(prev => {
+                  if (prev.has(entry.key)) return prev;
+                  const next = new Set(prev);
+                  next.add(entry.key);
+                  return next;
+                })}
               />
             </div>
           );
@@ -119,6 +139,16 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
             <div className="flex items-center gap-2 text-zinc-500">
               <Loader2 size={18} className="animate-spin" />
               <span className="text-sm">Loading terminal...</span>
+            </div>
+          </div>
+        )}
+        {isActiveGone && (
+          <div
+            className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none"
+            style={{ background: '#0a0a0a' }}
+          >
+            <div className="flex flex-col items-center gap-2 text-zinc-400">
+              <span className="text-sm">Terminal no longer exists — the session was removed</span>
             </div>
           </div>
         )}

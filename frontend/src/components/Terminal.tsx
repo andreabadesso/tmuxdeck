@@ -23,6 +23,7 @@ interface TerminalProps {
   visible?: boolean;
   onOpenFile?: (path: string) => void;
   onReady?: () => void;
+  onSessionGone?: () => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -125,8 +126,9 @@ function connectWebSocket(
   onMouseWarning: (enabled: boolean) => void,
   onBellWarning: (warning: BellWarning | null) => void,
   onConnected: (ws: WebSocket) => void,
-  onDisconnected: () => void,
+  onDisconnected: (code?: number) => void,
   onFirstData?: () => void,
+  onSessionGone?: () => void,
 ): { ws: WebSocket; close: () => void } {
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
@@ -156,6 +158,10 @@ function connectWebSocket(
       term.write(new Uint8Array(event.data));
     } else {
       const text = event.data as string;
+      if (text === 'SESSION_GONE:') {
+        onSessionGone?.();
+        return;
+      }
       if (text.startsWith('MOUSE_WARNING:')) {
         onMouseWarning(text === 'MOUSE_WARNING:on');
         return;
@@ -182,8 +188,8 @@ function connectWebSocket(
     // Error is always followed by a close event; reconnect logic lives there.
   };
 
-  ws.onclose = () => {
-    onDisconnected();
+  ws.onclose = (event) => {
+    onDisconnected(event.code);
   };
 
   const close = () => {
@@ -207,6 +213,7 @@ function setupWebSocketTerminal(
   windowIndexRef: { current: number },
   osc52TextRef: { current: string | null },
   onFirstData?: () => void,
+  onSessionGone?: () => void,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
@@ -217,6 +224,9 @@ function setupWebSocketTerminal(
   let hasConnectedOnce = false;
   let tapToReconnectActive = false;
   let currentClose: (() => void) | null = null;
+  let sessionGone = false;
+  // Fast-close heuristic: track consecutive quick closes with no data
+  let consecutiveQuickCloses = 0;
 
   const inScrollMode = { current: false };
 
@@ -350,8 +360,14 @@ function setupWebSocketTerminal(
     return true;
   });
 
+  function markSessionGone() {
+    sessionGone = true;
+    term.writeln('\r\n\x1b[1;31m[Terminal no longer exists]\x1b[0m');
+    onSessionGone?.();
+  }
+
   function scheduleReconnect() {
-    if (disposed || reconnectTimer !== null) return;
+    if (disposed || reconnectTimer !== null || sessionGone) return;
     if (reconnectAttempt >= RECONNECT_MAX_ATTEMPTS) {
       term.writeln('\r\n\x1b[1;31m[Connection lost \u2014 tap to reconnect]\x1b[0m');
       tapToReconnectActive = true;
@@ -378,6 +394,8 @@ function setupWebSocketTerminal(
     }
     wsRef.current = null;
 
+    let connectTime = 0;
+    let receivedData = false;
     const { close } = connectWebSocket(
       wsUrl,
       term,
@@ -387,6 +405,8 @@ function setupWebSocketTerminal(
       (openWs) => {
         if (disposed) { close(); return; }
         wsRef.current = openWs;
+        connectTime = Date.now();
+        receivedData = false;
         if (hasConnectedOnce) {
           term.clear();
           term.writeln('\x1b[1;32m[Reconnected]\x1b[0m');
@@ -398,12 +418,30 @@ function setupWebSocketTerminal(
         reconnectAttempt = 0;
         tapToReconnectActive = false;
       },
-      () => {
+      (code?: number) => {
         if (disposed) return;
         wsRef.current = null;
+        // Backend explicitly told us the session is gone
+        if (sessionGone || code === 4404) {
+          if (!sessionGone) markSessionGone();
+          return;
+        }
+        // Fast-close heuristic: if connection closed within 2s with no data,
+        // the session may have vanished between has-session and attach.
+        const elapsed = connectTime ? Date.now() - connectTime : Infinity;
+        if (elapsed < 2000 && !receivedData) {
+          consecutiveQuickCloses++;
+          if (consecutiveQuickCloses >= 3) {
+            markSessionGone();
+            return;
+          }
+        } else {
+          consecutiveQuickCloses = 0;
+        }
         scheduleReconnect();
       },
-      onFirstData,
+      () => { receivedData = true; onFirstData?.(); },
+      () => { if (!sessionGone) markSessionGone(); },
     );
     currentClose = close;
   }
@@ -428,7 +466,7 @@ function setupWebSocketTerminal(
       hiddenAt = Date.now();
       return;
     }
-    if (document.visibilityState !== 'visible' || disposed) return;
+    if (document.visibilityState !== 'visible' || disposed || sessionGone) return;
     const ws = wsRef.current;
     const wasHiddenLong = hiddenAt > 0 && (Date.now() - hiddenAt) > 2000;
     if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING || wasHiddenLong) {
@@ -538,7 +576,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -554,6 +592,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   onOpenFileRef.current = onOpenFile;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const onSessionGoneRef = useRef(onSessionGone);
+  onSessionGoneRef.current = onSessionGone;
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
@@ -735,7 +775,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.());
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.(), () => onSessionGoneRef.current?.());
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;
