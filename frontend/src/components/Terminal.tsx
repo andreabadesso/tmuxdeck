@@ -22,6 +22,7 @@ interface TerminalProps {
   autoFocus?: boolean;
   visible?: boolean;
   onOpenFile?: (path: string) => void;
+  onReady?: () => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -125,9 +126,11 @@ function connectWebSocket(
   onBellWarning: (warning: BellWarning | null) => void,
   onConnected: (ws: WebSocket) => void,
   onDisconnected: () => void,
+  onFirstData?: () => void,
 ): { ws: WebSocket; close: () => void } {
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
+  let firedFirstData = false;
 
   ws.onopen = () => {
     onConnected(ws);
@@ -145,6 +148,10 @@ function connectWebSocket(
   };
 
   ws.onmessage = (event) => {
+    if (!firedFirstData) {
+      firedFirstData = true;
+      onFirstData?.();
+    }
     if (event.data instanceof ArrayBuffer) {
       term.write(new Uint8Array(event.data));
     } else {
@@ -199,6 +206,7 @@ function setupWebSocketTerminal(
   wsRef: { current: WebSocket | null },
   windowIndexRef: { current: number },
   osc52TextRef: { current: string | null },
+  onFirstData?: () => void,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
@@ -395,6 +403,7 @@ function setupWebSocketTerminal(
         wsRef.current = null;
         scheduleReconnect();
       },
+      onFirstData,
     );
     currentClose = close;
   }
@@ -529,7 +538,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -543,6 +552,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const inScrollModeRef = useRef<{ current: boolean }>({ current: false });
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
@@ -724,7 +735,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef);
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.());
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;

@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useState, useEffect, useCallback, crea
 import { Terminal } from './Terminal';
 import type { TerminalHandle } from './Terminal';
 import type { PoolEntry } from '../hooks/useTerminalPool';
+import { Loader2 } from 'lucide-react';
 
 export interface TerminalPoolHandle {
   focusActive: () => void;
@@ -19,6 +20,8 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
   function TerminalPool({ entries, activeKey, onOpenFile }, ref) {
     // Use useState with lazy init to hold the refs map — avoids useRef.current access during render
     const [refsMap] = useState(() => new Map<string, React.RefObject<TerminalHandle | null>>());
+    // Track which terminals have received their first data
+    const [readyKeys, setReadyKeys] = useState<Set<string>>(() => new Set());
 
     // Sync refs map with entries (add new, remove stale)
     const currentKeys = new Set(entries.map((e) => e.key));
@@ -32,6 +35,22 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
         refsMap.set(entry.key, createRef<TerminalHandle>());
       }
     }
+
+    // Clean up readyKeys for evicted entries
+    useEffect(() => {
+      setReadyKeys(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const key of next) {
+          if (!currentKeys.has(key)) {
+            next.delete(key);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entries]);
 
     // Refit the newly active terminal when activeKey changes
     useEffect(() => {
@@ -58,6 +77,8 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
       clearBufferActive: () => getActiveRef()?.clearBuffer(),
     }), [getActiveRef]);
 
+    const showLoading = activeKey != null && !readyKeys.has(activeKey);
+
     return (
       <div className="relative w-full h-full">
         {entries.map((entry) => {
@@ -80,10 +101,27 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                 autoFocus={false}
                 visible={isActive}
                 onOpenFile={onOpenFile ? (path) => onOpenFile(entry.containerId, path) : undefined}
+                onReady={() => setReadyKeys(prev => {
+                  if (prev.has(entry.key)) return prev;
+                  const next = new Set(prev);
+                  next.add(entry.key);
+                  return next;
+                })}
               />
             </div>
           );
         })}
+        {showLoading && (
+          <div
+            className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none"
+            style={{ background: '#0a0a0a' }}
+          >
+            <div className="flex items-center gap-2 text-zinc-500">
+              <Loader2 size={18} className="animate-spin" />
+              <span className="text-sm">Loading terminal...</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
