@@ -12,7 +12,7 @@ import {
   removeWebAuthnCredential,
 } from '../api/httpClient';
 import { startRegistration } from '@simplewebauthn/browser';
-import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser/esm/types';
+import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/types';
 import { SettingsTabs } from '../components/SettingsTabs';
 import type { WebAuthnCredential } from '../types';
 

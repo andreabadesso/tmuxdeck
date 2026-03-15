@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { loginWithPin, setupPin, webauthnLoginOptions, webauthnLoginVerify } from '../api/httpClient';
 import type { LoginError } from '../api/httpClient';
 import { startAuthentication } from '@simplewebauthn/browser';
-import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser/esm/types';
+import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/types';
 
 interface PinScreenProps {
   mode: 'setup' | 'login';

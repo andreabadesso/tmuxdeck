@@ -53,8 +53,8 @@ export function ContainerNode({
   setSessionExpanded: setSessionExpandedProp,
   isContainerExpanded: isContainerExpandedProp,
   setContainerExpanded: setContainerExpandedProp,
-  sectionCollapsed,
-  onToggleSection,
+  sectionCollapsed: _sectionCollapsed,
+  onToggleSection: _onToggleSection,
 }: ContainerNodeProps) {
   const { addToast } = useToast();
   const ctype = container.containerType ?? 'docker';
