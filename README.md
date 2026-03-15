@@ -174,6 +174,22 @@ Reply to any notification or screenshot message to send text directly to that se
 
 `tmuxdeck list`, `tmuxdeck capture`, and `tmuxdeck screenshot` provide command-line access to session data. ANSI-to-PNG rendering uses pyte + Pillow. See [CLI](#cli) for usage.
 
+### Cloud Relays
+
+Connect your TmuxDeck instance to a cloud relay for remote access without port forwarding. Relays tunnel HTTP and WebSocket traffic through a persistent outbound connection. Configure via Settings > Relays or environment variables.
+
+### Voice Agent
+
+OpenAI-powered voice interaction via Telegram. Send a voice message to transcribe and process it through a chat agent, with optional text-to-speech responses. Requires `OPENAI_API_KEY`.
+
+### File Viewer
+
+View files from inside containers directly in the browser. Supported formats include code (with syntax highlighting), CSV, PDF, images, logs, and Markdown.
+
+### IP Allowlist
+
+Optional IP-based access control supporting Tailscale ranges and localhost. Enable with `IP_ALLOWLIST_ENABLED=true` for zero-config security on Tailscale networks.
+
 ### Debug Log
 
 In-memory ring buffer (2000 entries) merging backend and frontend logs. Viewable in Settings > Log tab with level/source filtering and auto-refresh. Frontend logs are prefixed with `ui:`.
@@ -223,6 +239,14 @@ All shortcuts are configurable in Settings. All tmux keybindings (Ctrl-B + w, Ct
 | `STATIC_DIR` | *(none)* | Path to frontend static files (used by Nix package) |
 | `TELEGRAM_BOT_TOKEN` | *(none)* | Telegram bot token for text interaction |
 | `TELEGRAM_ALLOWED_USERS` | *(none)* | Comma-separated Telegram user IDs |
+| `RELAY_URL` | *(none)* | Cloud relay WebSocket URL (e.g. `wss://relay.tmuxdeck.io/ws/tunnel`) |
+| `RELAY_TOKEN` | *(none)* | Relay authentication token |
+| `OPENAI_API_KEY` | *(none)* | OpenAI API key for voice agent |
+| `CHAT_AGENT_MODEL` | `gpt-4o` | OpenAI chat model for voice agent |
+| `TTS_MODEL` | `tts-1` | Text-to-speech model |
+| `TTS_VOICE` | `alloy` | TTS voice option |
+| `IP_ALLOWLIST_ENABLED` | `false` | Enable IP allowlist (Tailscale + localhost) |
+| `IP_ALLOWLIST` | `127.0.0.0/8,::1,100.64.0.0/10` | Allowed IP ranges when allowlist is enabled |
 
 ### Settings (via UI)
 
@@ -233,6 +257,7 @@ All shortcuts are configurable in Settings. All tmux keybindings (Ctrl-B + w, Ct
 - **Telegram chats** — manage registered Telegram chats (list, remove)
 - **Keyboard shortcuts** — customize all hotkeys from the UI
 - **Bridges** — create and manage bridge connections to remote machines
+- **Relays** — configure cloud relay tunnels for remote access
 - **Debug log** — view merged backend + frontend debug log with filtering
 
 ## Architecture
@@ -259,7 +284,7 @@ Browser (React + xterm.js)
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.12, FastAPI, docker-py |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Frontend | React 19, TypeScript, Vite 7, Tailwind CSS 4 |
 | Terminal | xterm.js (fit + web-links addons) |
 | Template editor | Monaco Editor |
 | Data fetching | TanStack Query |
@@ -277,7 +302,10 @@ tmuxdeck/
 │   │   │   ├── bridges.py
 │   │   │   ├── containers.py
 │   │   │   ├── debug_log.py
+│   │   │   ├── files.py
+│   │   │   ├── images.py
 │   │   │   ├── notifications.py
+│   │   │   ├── ordering.py
 │   │   │   ├── sessions.py
 │   │   │   ├── settings.py
 │   │   │   └── templates.py
@@ -285,15 +313,20 @@ tmuxdeck/
 │   │   │   ├── terminal.py
 │   │   │   └── bridge.py
 │   │   ├── services/       # Business logic
+│   │   │   ├── audio.py
 │   │   │   ├── bridge_manager.py
 │   │   │   ├── debug_log.py
 │   │   │   ├── docker_manager.py
 │   │   │   ├── notification_manager.py
+│   │   │   ├── relay_client.py
+│   │   │   ├── relay_manager.py
 │   │   │   ├── render.py
 │   │   │   ├── telegram_bot.py
-│   │   │   └── tmux_manager.py
+│   │   │   ├── tmux_manager.py
+│   │   │   └── voice_agent.py
 │   │   ├── schemas/        # Pydantic request/response models
 │   │   ├── cli.py          # CLI tool (tmuxdeck list/capture/screenshot)
+│   │   ├── middleware.py   # Auth & IP allowlist middleware
 │   │   └── config.py
 │   ├── tests/              # pytest test suite
 │   └── pyproject.toml      # Dependencies (managed with uv)
@@ -306,7 +339,7 @@ tmuxdeck/
 │   │   └── terminal.py
 │   └── pyproject.toml
 │
-├── frontend/               # React 18 + TypeScript + Vite
+├── frontend/               # React 19 + TypeScript + Vite
 │   └── src/
 │       ├── components/     # Sidebar, Terminal, SessionSwitcher, FoldedContainerPreview, ...
 │       ├── hooks/          # Terminal pool, keyboard shortcuts, useContainerExpandedState
@@ -327,12 +360,19 @@ tmuxdeck/
 
 ## API
 
+### Health
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Health check endpoint |
+
 ### Containers
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/containers` | List all containers (Docker + host + local + bridge) |
 | POST | `/api/v1/containers` | Create container from template |
+| POST | `/api/v1/containers/stream` | Create container with streaming build log |
 | GET | `/api/v1/containers/{id}` | Get container details |
 | PATCH | `/api/v1/containers/{id}` | Rename container |
 | DELETE | `/api/v1/containers/{id}` | Remove container |
@@ -370,6 +410,31 @@ tmuxdeck/
 | POST | `/api/v1/notifications/dismiss` | Dismiss notification |
 | GET | `/api/v1/notifications` | List pending notifications |
 | GET | `/api/v1/notifications/stream` | SSE notification stream |
+
+### Files & Images
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/containers/{id}/file` | Retrieve a file from a container |
+| POST | `/api/v1/containers/{id}/upload-image` | Upload an image to a container (max 20 MB) |
+
+### Ordering
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/ordering/containers` | Get container display order |
+| PUT | `/api/v1/ordering/containers` | Set container display order |
+| GET | `/api/v1/ordering/containers/{id}/sessions` | Get session display order |
+| PUT | `/api/v1/ordering/containers/{id}/sessions` | Set session display order |
+
+### Relays
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/settings/relays` | List cloud relays |
+| POST | `/api/v1/settings/relays` | Create relay |
+| PATCH | `/api/v1/settings/relays/{id}` | Update relay |
+| DELETE | `/api/v1/settings/relays/{id}` | Delete relay |
 
 ### Debug Log
 
