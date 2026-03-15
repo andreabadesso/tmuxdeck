@@ -7,7 +7,7 @@ import { SessionSwitcher } from '../components/SessionSwitcher';
 import { KeyboardHelp } from '../components/KeyboardHelp';
 import { FileViewer } from '../components/FileViewer';
 import { FoldedSessionPreview } from '../components/FoldedSessionPreview';
-import { Monitor, Maximize2, Eye } from 'lucide-react';
+import { Monitor, Maximize2, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../components/ToastContainer';
 import { useTerminalPool } from '../hooks/useTerminalPool';
 import { useWindowShortcuts } from '../hooks/useWindowShortcuts';
@@ -374,6 +374,11 @@ export function MainPage() {
       if (matchesBinding(e, hotkeys.showHelp)) {
         e.preventDefault();
         setHelpOpen((v) => !v);
+      }
+      if (matchesBinding(e, hotkeys.clearBuffer)) {
+        e.preventDefault();
+        poolRef.current?.clearBufferActive();
+        return;
       }
       const digitMatch = e.code.match(/^Digit(\d)$/);
       if (digitMatch && (e.ctrlKey || e.metaKey)) {
@@ -794,16 +799,25 @@ export function MainPage() {
             </div>
           )}
           {displayedSession && !isFolded && !isFoldedContainer && (
-            <button
-              onClick={() => {
-                poolRef.current?.refitActive();
-                poolRef.current?.focusActive();
-              }}
-              className="absolute top-2 right-2 p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors opacity-0 hover:opacity-100 focus:opacity-100 z-30"
-              title="Fit terminal to window"
-            >
-              <Maximize2 size={14} />
-            </button>
+            <div className="absolute top-2 right-2 z-30 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <button
+                onClick={() => { poolRef.current?.clearBufferActive(); poolRef.current?.focusActive(); }}
+                className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
+                title="Clear terminal buffer"
+              >
+                <Trash2 size={14} />
+              </button>
+              <button
+                onClick={() => {
+                  poolRef.current?.refitActive();
+                  poolRef.current?.focusActive();
+                }}
+                className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
+                title="Fit terminal to window"
+              >
+                <Maximize2 size={14} />
+              </button>
+            </div>
           )}
           {isPreview && (
             <div className="absolute inset-0 z-20 ring-1 ring-blue-500/30 rounded pointer-events-none" />

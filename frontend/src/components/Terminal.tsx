@@ -12,6 +12,7 @@ const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
 export interface TerminalHandle {
   focus: () => void;
   refit: () => void;
+  clearBuffer: () => void;
 }
 
 interface TerminalProps {
@@ -610,6 +611,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     refit: () => {
       doFit();
       sendResize();
+    },
+    clearBuffer: () => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send('CLEAR_BUFFER:');
+      }
+      xtermRef.current?.clear();
     },
   }));
 

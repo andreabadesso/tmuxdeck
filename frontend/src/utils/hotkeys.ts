@@ -9,6 +9,7 @@ export const DEFAULT_HOTKEYS: Record<string, string> = {
   moveWindowDown: 'Shift+Ctrl+ArrowDown',
   foldSource: 'Shift+Ctrl+ArrowLeft',
   unfoldSource: 'Shift+Ctrl+ArrowRight',
+  clearBuffer: 'Ctrl+Shift+l',
   deselect: 'Escape Escape',
 };
 
@@ -23,6 +24,7 @@ export const HOTKEY_LABELS: Record<string, string> = {
   moveWindowDown: 'Move window down',
   foldSource: 'Fold source (container)',
   unfoldSource: 'Unfold source (container)',
+  clearBuffer: 'Clear terminal buffer',
   deselect: 'Deselect / logout',
 };
 

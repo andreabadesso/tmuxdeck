@@ -6,6 +6,7 @@ import type { PoolEntry } from '../hooks/useTerminalPool';
 export interface TerminalPoolHandle {
   focusActive: () => void;
   refitActive: () => void;
+  clearBufferActive: () => void;
 }
 
 interface TerminalPoolProps {
@@ -54,6 +55,7 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
     useImperativeHandle(ref, () => ({
       focusActive: () => getActiveRef()?.focus(),
       refitActive: () => getActiveRef()?.refit(),
+      clearBufferActive: () => getActiveRef()?.clearBuffer(),
     }), [getActiveRef]);
 
     return (

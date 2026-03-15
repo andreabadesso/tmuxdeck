@@ -400,6 +400,27 @@ async def _pty_terminal(
                         except (ValueError, OSError) as e:
                             logger.debug("%s fix-bell failed: %s", label, e)
                         continue
+                    if text == "CLEAR_BUFFER:" and tmux_prefix and session_name:
+                        try:
+                            # Reset terminal (clears visible pane)
+                            sr = await asyncio.create_subprocess_exec(
+                                *tmux_prefix, "send-keys", "-R",
+                                "-t", session_name,
+                                stdout=asyncio.subprocess.DEVNULL,
+                                stderr=asyncio.subprocess.DEVNULL,
+                            )
+                            await sr.wait()
+                            # Clear scrollback history
+                            ch = await asyncio.create_subprocess_exec(
+                                *tmux_prefix, "clear-history",
+                                "-t", session_name,
+                                stdout=asyncio.subprocess.DEVNULL,
+                                stderr=asyncio.subprocess.DEVNULL,
+                            )
+                            await ch.wait()
+                        except (ValueError, OSError) as e:
+                            logger.debug("%s clear-buffer failed: %s", label, e)
+                        continue
                     if text.startswith("LIST_PANES:") and tmux_prefix and session_name and container_id:
                         try:
                             win_idx = int(text.split(":", 1)[1])
@@ -786,6 +807,23 @@ async def _bridge_terminal(
                         except (ValueError, asyncio.TimeoutError, Exception) as e:
                             logger.debug("Bridge fix-bell failed: %s", e)
                         continue
+                    if text == "CLEAR_BUFFER:":
+                        try:
+                            await conn.request({
+                                "type": "tmux_cmd",
+                                "cmd": ["tmux", "send-keys", "-R",
+                                         "-t", session_name],
+                                "source": source,
+                            })
+                            await conn.request({
+                                "type": "tmux_cmd",
+                                "cmd": ["tmux", "clear-history",
+                                         "-t", session_name],
+                                "source": source,
+                            })
+                        except (ValueError, asyncio.TimeoutError, Exception) as e:
+                            logger.debug("Bridge clear-buffer failed: %s", e)
+                        continue
                     # Regular text input → send as binary to bridge
                     await conn.send_binary(channel_id, text.encode("utf-8"))
                 elif "bytes" in msg:
@@ -1109,6 +1147,22 @@ async def terminal_ws(
                                 await websocket.send_text("BELL_WARNING:ok")
                             except (ValueError, Exception) as e:
                                 logger.debug("fix-bell failed: %s", e)
+                            continue
+                        # Handle clear-buffer control message
+                        if text == "CLEAR_BUFFER:":
+                            try:
+                                await dm.exec_command(
+                                    container_id,
+                                    ["tmux", "send-keys", "-R",
+                                     "-t", session_name],
+                                )
+                                await dm.exec_command(
+                                    container_id,
+                                    ["tmux", "clear-history",
+                                     "-t", session_name],
+                                )
+                            except (ValueError, Exception) as e:
+                                logger.debug("clear-buffer failed: %s", e)
                             continue
                         if text.startswith("LIST_PANES:"):
                             try:
