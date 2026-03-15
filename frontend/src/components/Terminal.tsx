@@ -385,6 +385,19 @@ function setupWebSocketTerminal(
     }, delay);
   }
 
+  function scheduleBridgeReconnect() {
+    if (disposed || reconnectTimer !== null || sessionGone) return;
+    // Bridge is temporarily unavailable — retry at max interval indefinitely.
+    // Don't increment reconnectAttempt so normal reconnect limits stay intact
+    // once the bridge comes back.
+    const delay = RECONNECT_MAX_DELAY_MS;
+    term.writeln('\r\n\x1b[1;33m[Bridge disconnected — waiting for reconnect...]\x1b[0m');
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (!disposed) doConnect();
+    }, delay);
+  }
+
   function doConnect() {
     if (disposed) return;
     // Close any in-progress connection attempt
@@ -424,6 +437,14 @@ function setupWebSocketTerminal(
         // Backend explicitly told us the session is gone
         if (sessionGone || code === 4404) {
           if (!sessionGone) markSessionGone();
+          return;
+        }
+        // Bridge not connected yet — keep retrying indefinitely with max
+        // backoff delay.  Don't count toward fast-close or max-attempts
+        // limits because the bridge may reconnect at any time.
+        if (code === 4004) {
+          consecutiveQuickCloses = 0;
+          scheduleBridgeReconnect();
           return;
         }
         // Fast-close heuristic: if connection closed within 2s with no data,

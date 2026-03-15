@@ -24,6 +24,8 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
     const [readyKeys, setReadyKeys] = useState<Set<string>>(() => new Set());
     // Track which terminals have been detected as gone (session removed)
     const [goneKeys, setGoneKeys] = useState<Set<string>>(() => new Set());
+    // Generation counter per key — incremented on retry to force remount
+    const [genMap, setGenMap] = useState(() => new Map<string, number>());
 
     // Sync refs map with entries (add new, remove stale)
     const currentKeys = new Set(entries.map((e) => e.key));
@@ -93,13 +95,36 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
     const isActiveGone = activeKey != null && goneKeys.has(activeKey);
     const showLoading = activeKey != null && !readyKeys.has(activeKey) && !isActiveGone;
 
+    const retryGoneTerminal = useCallback(() => {
+      if (!activeKey) return;
+      // Clear gone and ready state so the terminal shows loading
+      setGoneKeys(prev => {
+        if (!prev.has(activeKey)) return prev;
+        const next = new Set(prev);
+        next.delete(activeKey);
+        return next;
+      });
+      setReadyKeys(prev => {
+        if (!prev.has(activeKey)) return prev;
+        const next = new Set(prev);
+        next.delete(activeKey);
+        return next;
+      });
+      // Bump generation to force Terminal remount (fresh WebSocket connection)
+      setGenMap(prev => {
+        const next = new Map(prev);
+        next.set(activeKey, (prev.get(activeKey) ?? 0) + 1);
+        return next;
+      });
+    }, [activeKey]);
+
     return (
       <div className="relative w-full h-full">
         {entries.map((entry) => {
           const isActive = entry.key === activeKey;
           return (
             <div
-              key={entry.key}
+              key={`${entry.key}::${genMap.get(entry.key) ?? 0}`}
               className="absolute inset-0"
               style={{
                 visibility: isActive ? 'visible' : 'hidden',
@@ -144,11 +169,17 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
         )}
         {isActiveGone && (
           <div
-            className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none"
+            className="absolute inset-0 flex items-center justify-center z-20"
             style={{ background: '#0a0a0a' }}
           >
-            <div className="flex flex-col items-center gap-2 text-zinc-400">
+            <div className="flex flex-col items-center gap-3 text-zinc-400">
               <span className="text-sm">Terminal no longer exists — the session was removed</span>
+              <button
+                onClick={retryGoneTerminal}
+                className="px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+              >
+                Retry connection
+              </button>
             </div>
           </div>
         )}
