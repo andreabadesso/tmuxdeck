@@ -10,6 +10,7 @@ services:
       - ./scripts:/app/scripts:ro
       - /tmp/tmux-${HOST_UID:-1000}:/tmp/tmux-host
     environment:
+      - HOST_UID=${HOST_UID:-1000}
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
     restart: unless-stopped
 

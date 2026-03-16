@@ -12,6 +12,7 @@ services:
       # - /opt/production:/mnt/host/opt/production:ro
       # - /tmp:/mnt/host/tmp
     environment:
+      - HOST_UID=${HOST_UID:-1000}
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
       - DOCKER_SOCKET=/var/run/docker.sock
       # Optional: filter containers by label (e.g. DOCKER_LABEL=tmuxdeck=true)
