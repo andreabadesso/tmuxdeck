@@ -13,6 +13,7 @@ class RestoreRequest(CamelModel):
     container_id: str | None = None
     session_name: str | None = None
     dry_run: bool = False
+    include_drifted: bool = False
 
 
 class RestoreResult(CamelModel):
@@ -36,6 +37,7 @@ async def restore_snapshot(req: RestoreRequest | None = None):
         container_id=req.container_id if req else None,
         session_name=req.session_name if req else None,
         dry_run=req.dry_run if req else False,
+        include_drifted=req.include_drifted if req else False,
     )
     return RestoreResult(**result)
 

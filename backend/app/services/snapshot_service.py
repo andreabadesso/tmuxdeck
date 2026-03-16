@@ -130,11 +130,24 @@ class SnapshotService:
             else:
                 # Both exist — merge sessions
                 assert live_c is not None and old_c is not None
-                live_session_names = {s["name"] for s in live_c["sessions"]}
                 old_sessions_by_name = {s["name"]: s for s in old_c.get("sessions", [])}
 
-                merged_sessions = list(live_c["sessions"])  # All live sessions (fresh data)
+                merged_sessions = []
+                for live_s in live_c["sessions"]:
+                    old_s = old_sessions_by_name.get(live_s["name"])
+                    if old_s:
+                        old_paths = {w.get("path", "") for w in old_s.get("windows", [])} - {""}
+                        live_paths = {w.get("path", "") for w in live_s.get("windows", [])} - {""}
+                        if old_paths and (old_paths - live_paths):
+                            # Live lost windows — keep old snapshot entry
+                            merged_sessions.append(old_s)
+                        else:
+                            merged_sessions.append(live_s)  # live is same or better
+                    else:
+                        merged_sessions.append(live_s)
+
                 # Add disappeared sessions from old snapshot (rule 3)
+                live_session_names = {s["name"] for s in live_c["sessions"]}
                 for sname, old_s in old_sessions_by_name.items():
                     if sname not in live_session_names:
                         merged_sessions.append(old_s)
@@ -150,8 +163,9 @@ class SnapshotService:
         container_id: str | None = None,
         session_name: str | None = None,
         dry_run: bool = False,
+        include_drifted: bool = False,
     ) -> dict:
-        """Restore missing sessions from snapshot.
+        """Restore missing sessions (and optionally drifted windows) from snapshot.
 
         Returns: {"restored": [...], "skipped": [...], "errors": [...]}
         """
@@ -164,10 +178,15 @@ class SnapshotService:
         # Get current live state
         resp = await enumerate_containers()
         live_sessions: dict[str, set[str]] = {}
+        live_session_paths: dict[str, dict[str, set[str]]] = {}
         live_status: dict[str, str] = {}
         live_types: dict[str, str | None] = {}
         for c in resp.containers:
             live_sessions[c.id] = {s.name for s in c.sessions}
+            live_session_paths[c.id] = {
+                s.name: {w.path for w in s.windows if w.path}
+                for s in c.sessions
+            }
             live_status[c.id] = c.status
             live_types[c.id] = c.container_type
 
@@ -178,16 +197,9 @@ class SnapshotService:
 
         for sc in snap.get("containers", []):
             cid = sc.get("id", "")
-            ctype = sc.get("container_type", "")
 
             # Filter by container_id if specified
             if container_id and cid != container_id:
-                continue
-
-            # Skip bridge containers
-            if ctype == "bridge":
-                for s in sc.get("sessions", []):
-                    skipped.append(f"{cid}/{s['name']} (bridge container)")
                 continue
 
             # Skip containers not in live list
@@ -213,32 +225,57 @@ class SnapshotService:
                 if session_name and sname != session_name:
                     continue
 
-                # Only restore fully missing sessions
-                if sname in live_names:
-                    continue
-
                 label = f"{cid}/{sname}"
 
-                if dry_run:
-                    restored.append(label)
-                    continue
+                if sname not in live_names:
+                    # Fully missing session — recreate
+                    if dry_run:
+                        restored.append(label)
+                        continue
 
-                try:
-                    windows = session.get("windows", [])
-                    first_path = windows[0]["path"] if windows else None
+                    try:
+                        windows = session.get("windows", [])
+                        first_path = windows[0]["path"] if windows else None
 
-                    await tm.create_session(cid, sname, start_dir=first_path or None)
+                        await tm.create_session(cid, sname, start_dir=first_path or None)
 
-                    # Create additional windows
-                    for win in windows[1:]:
-                        await tm.create_window(
-                            cid, sname,
-                            window_name=win.get("name"),
-                            start_dir=win.get("path") or None,
-                        )
+                        for win in windows[1:]:
+                            await tm.create_window(
+                                cid, sname,
+                                window_name=win.get("name"),
+                                start_dir=win.get("path") or None,
+                            )
 
-                    restored.append(label)
-                except Exception as exc:
-                    errors.append(f"{label}: {exc}")
+                        restored.append(label)
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
+
+                elif include_drifted:
+                    # Session exists — check for missing windows
+                    snap_windows = session.get("windows", [])
+                    live_paths = live_session_paths.get(cid, {}).get(sname, set())
+                    missing_windows = [
+                        w for w in snap_windows
+                        if w.get("path") and w["path"] not in live_paths
+                    ]
+                    if not missing_windows:
+                        continue
+
+                    if dry_run:
+                        restored.append(f"{label} (+{len(missing_windows)} windows)")
+                        continue
+
+                    try:
+                        added = 0
+                        for win in missing_windows:
+                            await tm.create_window(
+                                cid, sname,
+                                window_name=win.get("name"),
+                                start_dir=win.get("path") or None,
+                            )
+                            added += 1
+                        restored.append(f"{label} (+{added} windows)")
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
 
         return {"restored": restored, "skipped": skipped, "errors": errors}

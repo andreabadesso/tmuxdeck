@@ -284,9 +284,9 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             >
               <Camera size={15} />
               Snapshot
-              {(data?.missingSnapshotSessions ?? 0) > 0 && (
+              {((data?.missingSnapshotSessions ?? 0) + (data?.driftedSnapshotSessions ?? 0)) > 0 && (
                 <span className="ml-auto bg-orange-600 text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                  {data!.missingSnapshotSessions}
+                  {(data?.missingSnapshotSessions ?? 0) + (data?.driftedSnapshotSessions ?? 0)}
                 </span>
               )}
             </button>

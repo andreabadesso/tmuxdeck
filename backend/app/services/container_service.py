@@ -134,10 +134,12 @@ async def enumerate_containers() -> ContainerListResponse:
         docker_containers = await dm.list_containers()
     except Exception as exc:
         logger.warning("Docker unavailable, skipping Docker containers", exc_info=True)
+        missing, drifted = _count_snapshot_issues(results)
         return ContainerListResponse(
             containers=results,
             docker_error=str(exc),
-            missing_snapshot_sessions=_count_missing_snapshot_sessions(results),
+            missing_snapshot_sessions=missing,
+            drifted_snapshot_sessions=drifted,
         )
 
     metas = store.list_container_metas()
@@ -154,44 +156,58 @@ async def enumerate_containers() -> ContainerListResponse:
 
         results.append(_build_container_response(dc, meta, sessions))
 
+    missing, drifted = _count_snapshot_issues(results)
     return ContainerListResponse(
         containers=results,
         docker_error=docker_error,
-        missing_snapshot_sessions=_count_missing_snapshot_sessions(results),
+        missing_snapshot_sessions=missing,
+        drifted_snapshot_sessions=drifted,
     )
 
 
-def _count_missing_snapshot_sessions(live_containers: list[ContainerResponse]) -> int:
-    """Count sessions in snapshot but not live (excluding bridge/stopped containers)."""
+def _count_snapshot_issues(
+    live_containers: list[ContainerResponse],
+) -> tuple[int, int]:
+    """Count missing and drifted sessions comparing snapshot to live state.
+
+    Returns (missing, drifted) counts.
+    Missing = session name gone from live.
+    Drifted = session exists but has fewer windows / missing paths vs snapshot.
+    """
     snap = store.get_snapshot()
     if not snap:
-        return 0
+        return 0, 0
 
-    # Build set of live session names per container
-    live_sessions: dict[str, set[str]] = {}
+    # Build live session data: container_id -> session_name -> set of paths
+    live_sessions: dict[str, dict[str, set[str]]] = {}
     live_status: dict[str, str] = {}
-    live_types: dict[str, str | None] = {}
     for c in live_containers:
-        live_sessions[c.id] = {s.name for s in c.sessions}
+        session_map: dict[str, set[str]] = {}
+        for s in c.sessions:
+            session_map[s.name] = {w.path for w in s.windows if w.path}
+        live_sessions[c.id] = session_map
         live_status[c.id] = c.status
-        live_types[c.id] = c.container_type
 
-    count = 0
+    missing = 0
+    drifted = 0
     for sc in snap.get("containers", []):
         cid = sc.get("id", "")
-        ctype = sc.get("container_type", "")
-        # Skip bridge containers (can't restore remotely)
-        if ctype == "bridge":
-            continue
         # Skip containers not in live list (stopped docker, disconnected bridge)
         if cid not in live_sessions:
             continue
         # Skip stopped containers
         if live_status.get(cid) != "running":
             continue
-        live_names = live_sessions[cid]
+        container_live = live_sessions[cid]
         for session in sc.get("sessions", []):
-            if session.get("name") not in live_names:
-                count += 1
+            sname = session.get("name", "")
+            if sname not in container_live:
+                missing += 1
+            else:
+                snap_paths = {w.get("path", "") for w in session.get("windows", [])}
+                snap_paths.discard("")
+                live_paths = container_live[sname]
+                if snap_paths and (snap_paths - live_paths):
+                    drifted += 1
 
-    return count
+    return missing, drifted
