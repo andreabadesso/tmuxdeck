@@ -124,8 +124,18 @@ async def create_window(container_id: str, session_id: str, req: CreateWindowReq
     if session_name is None:
         session_name = session_id
 
+    start_dir = None
     try:
-        windows = await tm.create_window(container_id, session_name, req.name if req else None)
+        existing = await tm.list_windows(container_id, session_name)
+        active = next((w for w in existing if w.get("active")), None)
+        source = active or (existing[0] if existing else None)
+        if source and source.get("path"):
+            start_dir = source["path"]
+    except Exception:
+        pass
+
+    try:
+        windows = await tm.create_window(container_id, session_name, req.name if req else None, start_dir=start_dir)
     except Exception as e:
         raise HTTPException(500, f"Failed to create window: {e}") from None
     return [TmuxWindowResponse(**w) for w in windows]
