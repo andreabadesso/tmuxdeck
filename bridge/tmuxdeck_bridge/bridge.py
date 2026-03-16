@@ -892,7 +892,7 @@ class Bridge:
         """List windows for a tmux session."""
         cmd = ["tmux"] + extra_args + [
             "list-windows", "-t", session_name, "-F",
-            "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
+            "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}|#{pane_current_path}",
         ]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -921,6 +921,7 @@ class Bridge:
                 "activity": parts[5] == "1" if len(parts) > 5 else False,
                 "command": parts[6] if len(parts) > 6 else "",
                 "pane_status": parts[7] if len(parts) > 7 else "",
+                "path": parts[8] if len(parts) > 8 else "",
             })
         return windows
 
@@ -933,7 +934,7 @@ class Bridge:
             tmux_cmd += ["-S", socket_path]
         tmux_cmd += [
             "list-windows", "-t", session_name, "-F",
-            "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
+            "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}|#{pane_current_path}",
         ]
         result = container.exec_run(tmux_cmd, demux=True)
         if result.exit_code != 0:
@@ -956,6 +957,7 @@ class Bridge:
                 "activity": parts[5] == "1" if len(parts) > 5 else False,
                 "command": parts[6] if len(parts) > 6 else "",
                 "pane_status": parts[7] if len(parts) > 7 else "",
+                "path": parts[8] if len(parts) > 8 else "",
             })
         return windows
 
