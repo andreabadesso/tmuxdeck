@@ -276,6 +276,10 @@ async def bridge_ws(websocket: WebSocket):
                     _rx_text_frames = 0
                     _fwd_tasks = 0
 
+                    # Auto-tune check
+                    if len(conn._latency_samples) >= 5:
+                        await bm.check_auto_tune(bridge_id)
+
                 else:
                     logger.debug("Unknown bridge message type: %s", msg_type)
 

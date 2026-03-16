@@ -19,6 +19,7 @@ def _build_response(cfg: dict, bm: BridgeManager, *, include_token: bool = False
         token=cfg.get("token") if include_token else None,
         connected=bm.is_connected(cfg["id"]),
         enabled=cfg.get("enabled", True),
+        auto_tune=cfg.get("autoTune", False),
         created_at=cfg["createdAt"],
         settings=cfg.get("settings"),
     )
@@ -60,6 +61,9 @@ async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
     # Serialize settings sub-model to dict
     if req.settings is not None:
         updates["settings"] = req.settings.model_dump(exclude_none=True)
+    # Map auto_tune → autoTune for store
+    if "auto_tune" in updates:
+        updates["autoTune"] = updates.pop("auto_tune")
     if not updates:
         raise HTTPException(400, "No fields to update")
 

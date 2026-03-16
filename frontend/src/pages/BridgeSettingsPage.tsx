@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Copy, Check, ToggleLeft, ToggleRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { SettingsTabs } from '../components/SettingsTabs';
+import { InfoTooltip } from '../components/InfoTooltip';
 import type { BridgeConfig, BridgeSettings } from '../types';
 
 export function BridgeSettingsPage() {
@@ -40,6 +41,14 @@ export function BridgeSettingsPage() {
   const settingsMutation = useMutation({
     mutationFn: ({ id, settings }: { id: string; settings: BridgeSettings }) =>
       api.updateBridge(id, { settings }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bridges'] });
+    },
+  });
+
+  const autoTuneMutation = useMutation({
+    mutationFn: ({ id, autoTune }: { id: string; autoTune: boolean }) =>
+      api.updateBridge(id, { autoTune }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bridges'] });
     },
@@ -224,11 +233,29 @@ export function BridgeSettingsPage() {
                   {isExpanded && (
                     <div className="border-t border-gray-700 px-4 py-3 space-y-3">
                       <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wide">Settings</h3>
+                      {/* Auto-tune toggle */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm text-gray-300">Auto-tune</span>
+                          <InfoTooltip text="Automatically adjusts settings based on measured latency and jitter. Requires at least 5 latency samples." />
+                        </div>
+                        <button
+                          onClick={() => autoTuneMutation.mutate({ id: bridge.id, autoTune: !bridge.autoTune })}
+                          disabled={autoTuneMutation.isPending}
+                          className={`p-1 transition-colors ${
+                            bridge.autoTune ? 'text-blue-400 hover:text-blue-300' : 'text-gray-600 hover:text-gray-400'
+                          }`}
+                        >
+                          {bridge.autoTune ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 gap-3">
                         {/* Compression toggle */}
                         <div className="flex items-center justify-between col-span-2">
                           <div>
-                            <span className="text-sm text-gray-300">Compression</span>
+                            <span className={`text-sm ${bridge.autoTune ? 'text-gray-400' : 'text-gray-300'}`}>Compression</span>
+                            <InfoTooltip text="Compresses WebSocket frames. Reduces bandwidth at the cost of CPU. Best for high-latency or bandwidth-constrained links." />
+                            {bridge.autoTune && <span className="ml-2 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
                             {neg && <span className="ml-2 text-xs text-gray-500">active: {neg.compression ? 'on' : 'off'}</span>}
                           </div>
                           <button
@@ -236,75 +263,99 @@ export function BridgeSettingsPage() {
                               id: bridge.id,
                               settings: { compression: !(s.compression ?? true) },
                             })}
-                            disabled={settingsMutation.isPending}
+                            disabled={settingsMutation.isPending || bridge.autoTune}
                             className={`p-1 transition-colors ${
-                              (s.compression ?? true) ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
+                              bridge.autoTune
+                                ? (neg?.compression ?? s.compression ?? true) ? 'text-green-400/50 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed'
+                                : (s.compression ?? true) ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
                             }`}
                           >
-                            {(s.compression ?? true) ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                            {(bridge.autoTune ? (neg?.compression ?? s.compression ?? true) : (s.compression ?? true))
+                              ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                           </button>
                         </div>
                         {/* Report interval */}
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
                             Report interval (sec)
-                            {neg && <span className="ml-1 text-gray-600">active: {neg.reportIntervalSec}</span>}
+                            <InfoTooltip text="How often the bridge reports session/terminal status. Lower = faster UI updates but more traffic." />
+                            {bridge.autoTune && <span className="ml-1 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
+                            {!bridge.autoTune && neg && <span className="ml-1 text-gray-600">active: {neg.reportIntervalSec}</span>}
                           </label>
                           <input
                             type="number"
                             min={1}
                             max={60}
                             step={0.5}
-                            defaultValue={s.reportIntervalSec ?? 5}
+                            {...(bridge.autoTune
+                              ? { value: neg?.reportIntervalSec ?? s.reportIntervalSec ?? 5, readOnly: true }
+                              : { defaultValue: s.reportIntervalSec ?? 5, key: `report-${bridge.id}-manual` }
+                            )}
                             onBlur={(e) => {
+                              if (bridge.autoTune) return;
                               const v = parseFloat(e.target.value);
                               if (!isNaN(v) && v >= 1 && v <= 60) {
                                 settingsMutation.mutate({ id: bridge.id, settings: { reportIntervalSec: v } });
                               }
                             }}
-                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                            disabled={bridge.autoTune}
+                            className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
                         </div>
                         {/* Ping interval */}
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
                             Ping interval (sec)
-                            {neg && <span className="ml-1 text-gray-600">active: {neg.pingIntervalSec}</span>}
+                            <InfoTooltip text="How often the server pings the bridge for latency measurement. Lower = faster detection of connection issues." />
+                            {bridge.autoTune && <span className="ml-1 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
+                            {!bridge.autoTune && neg && <span className="ml-1 text-gray-600">active: {neg.pingIntervalSec}</span>}
                           </label>
                           <input
                             type="number"
                             min={2}
                             max={120}
                             step={1}
-                            defaultValue={s.pingIntervalSec ?? 10}
+                            {...(bridge.autoTune
+                              ? { value: neg?.pingIntervalSec ?? s.pingIntervalSec ?? 10, readOnly: true }
+                              : { defaultValue: s.pingIntervalSec ?? 10, key: `ping-${bridge.id}-manual` }
+                            )}
                             onBlur={(e) => {
+                              if (bridge.autoTune) return;
                               const v = parseFloat(e.target.value);
                               if (!isNaN(v) && v >= 2 && v <= 120) {
                                 settingsMutation.mutate({ id: bridge.id, settings: { pingIntervalSec: v } });
                               }
                             }}
-                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                            disabled={bridge.autoTune}
+                            className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
                         </div>
                         {/* Coalesce ms */}
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
                             I/O coalesce (ms)
-                            {neg && <span className="ml-1 text-gray-600">active: {neg.coalesceMs}</span>}
+                            <InfoTooltip text="Buffers terminal output before sending to reduce frame overhead. Higher = fewer frames but more output latency." />
+                            {bridge.autoTune && <span className="ml-1 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
+                            {!bridge.autoTune && neg && <span className="ml-1 text-gray-600">active: {neg.coalesceMs}</span>}
                           </label>
                           <input
                             type="number"
                             min={0}
                             max={50}
                             step={1}
-                            defaultValue={s.coalesceMs ?? 2}
+                            {...(bridge.autoTune
+                              ? { value: neg?.coalesceMs ?? s.coalesceMs ?? 2, readOnly: true }
+                              : { defaultValue: s.coalesceMs ?? 2, key: `coalesce-${bridge.id}-manual` }
+                            )}
                             onBlur={(e) => {
+                              if (bridge.autoTune) return;
                               const v = parseInt(e.target.value, 10);
                               if (!isNaN(v) && v >= 0 && v <= 50) {
                                 settingsMutation.mutate({ id: bridge.id, settings: { coalesceMs: v } });
                               }
                             }}
-                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                            disabled={bridge.autoTune}
+                            className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
                         </div>
                       </div>

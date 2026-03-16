@@ -341,6 +341,58 @@ class BridgeConnection:
         self._terminal_relays.clear()
 
 
+def compute_auto_settings(p90_ms: float, jitter_ms: float) -> dict:
+    """Compute optimal settings based on measured latency and jitter."""
+    # Coalesce
+    if p90_ms < 20:
+        coalesce_ms = 0
+    elif p90_ms <= 80:
+        coalesce_ms = 2
+    elif p90_ms <= 200:
+        scale = int((p90_ms - 80) / 120 * 10)
+        coalesce_ms = 5 + scale
+    else:
+        coalesce_ms = min(25, 15 + int((p90_ms - 200) / 100 * 10))
+    if jitter_ms > 30:
+        coalesce_ms += 5
+
+    # Ping interval
+    if jitter_ms > 50:
+        ping_interval_sec = 5
+    elif jitter_ms > 20:
+        ping_interval_sec = 8
+    else:
+        ping_interval_sec = 15
+    if p90_ms > 200:
+        ping_interval_sec = min(ping_interval_sec, 10)
+
+    # Compression
+    compression = p90_ms > 100
+
+    # Report interval
+    report_interval_sec = 3 if jitter_ms > 50 else 5
+
+    return {
+        "compression": compression,
+        "report_interval_sec": float(report_interval_sec),
+        "ping_interval_sec": float(ping_interval_sec),
+        "coalesce_ms": coalesce_ms,
+    }
+
+
+def _settings_changed(old: dict, new: dict) -> bool:
+    """Check if auto-tune settings differ meaningfully from current."""
+    if old.get("compression") != new.get("compression"):
+        return True
+    if abs(old.get("coalesce_ms", 0) - new.get("coalesce_ms", 0)) > 2:
+        return True
+    if abs(old.get("ping_interval_sec", 0) - new.get("ping_interval_sec", 0)) > 1:
+        return True
+    if abs(old.get("report_interval_sec", 0) - new.get("report_interval_sec", 0)) > 1:
+        return True
+    return False
+
+
 class BridgeManager:
     """Singleton tracking all connected bridge agents."""
 
@@ -382,3 +434,28 @@ class BridgeManager:
 
     def list_bridges(self) -> list[BridgeConnection]:
         return list(self.bridges.values())
+
+    async def check_auto_tune(self, bridge_id: str) -> None:
+        """If auto-tune is enabled, recompute and push settings if changed."""
+        from .. import store
+
+        bridge_cfg = store.get_bridge_config(bridge_id)
+        if not bridge_cfg or not bridge_cfg.get("autoTune"):
+            return
+
+        conn = self.get_bridge(bridge_id)
+        if not conn or not conn.connected:
+            return
+        if len(conn._latency_samples) < 5:
+            return
+
+        p90 = conn.latency_p90_ms or 0
+        jitter = conn.latency_jitter_ms or 0
+        new_settings = compute_auto_settings(p90, jitter)
+        current = conn.negotiated_settings or {}
+
+        if _settings_changed(current, new_settings):
+            store.update_bridge_config(bridge_id, {"settings": new_settings})
+            await conn.push_settings(new_settings)
+            logger.info("Auto-tune [%s]: updated settings %s (p90=%.0fms jitter=%.0fms)",
+                        conn.name, new_settings, p90, jitter)

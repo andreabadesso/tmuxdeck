@@ -193,6 +193,7 @@ export interface BridgeConfig {
   token: string | null;
   connected: boolean;
   enabled: boolean;
+  autoTune?: boolean;
   createdAt: string;
   latencyLastMs: number | null;
   latencyMinMs: number | null;

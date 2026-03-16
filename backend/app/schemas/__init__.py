@@ -243,6 +243,7 @@ class CreateBridgeRequest(CamelModel):
 class UpdateBridgeRequest(CamelModel):
     enabled: bool | None = None
     settings: BridgeSettings | None = None
+    auto_tune: bool | None = None
 
 
 class BridgeConfigResponse(CamelModel):
@@ -251,6 +252,7 @@ class BridgeConfigResponse(CamelModel):
     token: str | None = None
     connected: bool = False
     enabled: bool = True
+    auto_tune: bool = False
     created_at: str
     latency_last_ms: float | None = None
     latency_min_ms: float | None = None
