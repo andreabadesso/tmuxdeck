@@ -30,10 +30,12 @@ class TerminalSession:
         channel_id: int,
         ws: websockets.ClientConnection,
         cmd: list[str],
+        ws_stats: dict[str, int | float] | None = None,
     ) -> None:
         self.channel_id = channel_id
         self._ws = ws
         self._cmd = cmd
+        self._ws_stats = ws_stats
         self._master_fd: int | None = None
         self._proc: asyncio.subprocess.Process | None = None
         self._task: asyncio.Task | None = None
@@ -92,7 +94,11 @@ class TerminalSession:
                         chunk = os.read(fd, _READ_BUF)
                         if not chunk:
                             if chunks:
-                                await self._ws.send(header + b"".join(chunks))
+                                frame = header + b"".join(chunks)
+                                if self._ws_stats is not None:
+                                    self._ws_stats["tx_binary_frames"] += 1
+                                    self._ws_stats["tx_binary_bytes"] += len(frame) - 2
+                                await self._ws.send(frame)
                             return
                         chunks.append(chunk)
                         total += len(chunk)
@@ -112,7 +118,11 @@ class TerminalSession:
                             try:
                                 chunk = os.read(fd, _READ_BUF)
                                 if not chunk:
-                                    await self._ws.send(header + b"".join(chunks))
+                                    frame = header + b"".join(chunks)
+                                    if self._ws_stats is not None:
+                                        self._ws_stats["tx_binary_frames"] += 1
+                                        self._ws_stats["tx_binary_bytes"] += len(frame) - 2
+                                    await self._ws.send(frame)
                                     return
                                 chunks.append(chunk)
                                 total += len(chunk)
@@ -121,7 +131,11 @@ class TerminalSession:
                     except asyncio.TimeoutError:
                         pass
 
-                await self._ws.send(header + b"".join(chunks))
+                frame = header + b"".join(chunks)
+                if self._ws_stats is not None:
+                    self._ws_stats["tx_binary_frames"] += 1
+                    self._ws_stats["tx_binary_bytes"] += len(frame) - 2
+                await self._ws.send(frame)
         except OSError:
             pass
         except Exception as e:

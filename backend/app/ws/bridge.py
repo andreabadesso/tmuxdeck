@@ -13,6 +13,7 @@ import json
 import logging
 import socket
 import struct
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -154,6 +155,19 @@ async def bridge_ws(websocket: WebSocket):
         # Start latency ping loop
         ping_task = asyncio.create_task(_ping_loop(conn))
 
+        # Traffic stats (reset on each pong)
+        _rx_bin_frames = 0
+        _rx_bin_bytes = 0
+        _rx_text_frames = 0
+        _fwd_tasks = 0
+
+        def _format_bytes(n: int) -> str:
+            if n >= 1_048_576:
+                return f"{n / 1_048_576:.1f}MB"
+            if n >= 1024:
+                return f"{n / 1024:.1f}KB"
+            return f"{n}B"
+
         # Step 2: Main message loop
         while True:
             message = await websocket.receive()
@@ -166,14 +180,18 @@ async def bridge_ws(websocket: WebSocket):
                 data = message["bytes"]
                 if len(data) < 2:
                     continue
+                _rx_bin_frames += 1
+                _rx_bin_bytes += len(data) - 2
                 channel_id = struct.unpack(">H", data[:2])[0]
                 payload = bytes(data[2:])
                 user_ws = conn.get_terminal_ws(channel_id)
                 if user_ws:
+                    _fwd_tasks += 1
                     asyncio.create_task(_forward_bytes(conn, channel_id, user_ws, payload))
 
             # Text frame: JSON control message
             elif "text" in message and message["text"]:
+                _rx_text_frames += 1
                 try:
                     msg = json.loads(message["text"])
                 except json.JSONDecodeError:
@@ -222,6 +240,17 @@ async def bridge_ws(websocket: WebSocket):
 
                 elif msg_type == "pong":
                     conn.record_pong()
+                    rtt = conn.latency_last_ms
+                    logger.info(
+                        "Bridge [%s] latency: %.0fms | rx since last pong: %d bin (%s) %d txt | fwd_tasks: %d",
+                        name, rtt or 0,
+                        _rx_bin_frames, _format_bytes(_rx_bin_bytes),
+                        _rx_text_frames, _fwd_tasks,
+                    )
+                    _rx_bin_frames = 0
+                    _rx_bin_bytes = 0
+                    _rx_text_frames = 0
+                    _fwd_tasks = 0
 
                 else:
                     logger.debug("Unknown bridge message type: %s", msg_type)

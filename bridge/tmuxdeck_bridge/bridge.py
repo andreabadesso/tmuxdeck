@@ -32,6 +32,8 @@ class Bridge:
         self._terminals: dict[int, TerminalSession] = {}  # channel_id → session
         self._running = False
         self._host_socket_broken = False
+        # WebSocket traffic stats (reset every 10s by _stats_loop)
+        self._ws_stats: dict[str, int | float] = self._empty_stats()
         # Session source lookup caches (rebuilt on each _collect_sessions)
         self._name_to_source: dict[str, str] = {}  # session_name → source
         self._id_to_source: dict[str, str] = {}  # session_id → source
@@ -222,6 +224,46 @@ class Bridge:
     def stop(self) -> None:
         self._running = False
 
+    @staticmethod
+    def _empty_stats() -> dict[str, int | float]:
+        return {
+            "tx_binary_frames": 0,
+            "tx_binary_bytes": 0,
+            "tx_text_frames": 0,
+            "rx_binary_frames": 0,
+            "rx_binary_bytes": 0,
+            "rx_text_frames": 0,
+            "pong_send_ms": 0.0,
+        }
+
+    def _reset_stats(self) -> None:
+        self._ws_stats = self._empty_stats()
+
+    def _format_bytes(self, n: int) -> str:
+        if n >= 1_048_576:
+            return f"{n / 1_048_576:.1f}MB"
+        if n >= 1024:
+            return f"{n / 1024:.1f}KB"
+        return f"{n}B"
+
+    async def _stats_loop(self) -> None:
+        """Log WebSocket traffic stats every 10s, then reset counters."""
+        try:
+            while True:
+                await asyncio.sleep(10)
+                s = self._ws_stats
+                logger.info(
+                    "WS stats: TX %d bin (%s) %d txt | RX %d bin (%s) %d txt | pong_send: %.0fms",
+                    s["tx_binary_frames"], self._format_bytes(s["tx_binary_bytes"]),
+                    s["tx_text_frames"],
+                    s["rx_binary_frames"], self._format_bytes(s["rx_binary_bytes"]),
+                    s["rx_text_frames"],
+                    s["pong_send_ms"],
+                )
+                self._reset_stats()
+        except asyncio.CancelledError:
+            pass
+
     async def _authenticate(self, ws: websockets.ClientConnection) -> bool:
         """Send auth message and wait for response."""
         await ws.send(json.dumps({
@@ -257,6 +299,7 @@ class Bridge:
                 await asyncio.sleep(self.config.session_report_interval)
                 try:
                     sessions = await self._collect_sessions()
+                    self._ws_stats["tx_text_frames"] += 1
                     await ws.send(json.dumps({
                         "type": "sessions",
                         "sessions": sessions,
@@ -285,13 +328,20 @@ class Bridge:
         except Exception as e:
             logger.debug("Initial session report failed: %s", e)
 
+        self._reset_stats()
         reporter = asyncio.create_task(session_reporter())
+        stats_task = asyncio.create_task(self._stats_loop())
         try:
             await message_handler()
         finally:
             reporter.cancel()
+            stats_task.cancel()
             try:
                 await reporter
+            except asyncio.CancelledError:
+                pass
+            try:
+                await stats_task
             except asyncio.CancelledError:
                 pass
 
@@ -299,6 +349,8 @@ class Bridge:
         """Route binary frame to the correct terminal session."""
         if len(data) < 2:
             return
+        self._ws_stats["rx_binary_frames"] += 1
+        self._ws_stats["rx_binary_bytes"] += len(data) - 2
         channel_id = struct.unpack(">H", data[:2])[0]
         payload = data[2:]
         terminal = self._terminals.get(channel_id)
@@ -307,6 +359,7 @@ class Bridge:
 
     async def _handle_json(self, msg: dict) -> None:
         """Handle a JSON control message from backend."""
+        self._ws_stats["rx_text_frames"] += 1
         msg_type = msg.get("type", "")
 
         if msg_type == "attach":
@@ -319,6 +372,7 @@ class Bridge:
             await self._handle_tmux_cmd(msg)
         elif msg_type == "list_sessions":
             sessions = await self._collect_sessions()
+            self._ws_stats["tx_text_frames"] += 1
             await self._ws.send(json.dumps({
                 "type": "sessions",
                 "sessions": sessions,
@@ -329,7 +383,11 @@ class Bridge:
         elif msg_type == "file_write":
             await self._handle_file_write(msg)
         elif msg_type == "ping":
-            await self._ws.send(json.dumps({"type": "pong"}))
+            pong = json.dumps({"type": "pong"})
+            t0 = time.monotonic()
+            await self._ws.send(pong)
+            self._ws_stats["pong_send_ms"] = (time.monotonic() - t0) * 1000
+            self._ws_stats["tx_text_frames"] += 1
         else:
             logger.debug("Unknown message type: %s", msg_type)
 
@@ -353,7 +411,7 @@ class Bridge:
         )
 
         try:
-            terminal = TerminalSession(channel_id, self._ws, cmd)
+            terminal = TerminalSession(channel_id, self._ws, cmd, ws_stats=self._ws_stats)
             await terminal.start()
             terminal.resize(cols, rows)
             self._terminals[channel_id] = terminal
