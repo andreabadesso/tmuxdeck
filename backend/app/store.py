@@ -383,7 +383,15 @@ def update_bridge_config(bridge_id: str, data: dict[str, Any]) -> dict[str, Any]
         if b["id"] == bridge_id:
             for key, value in data.items():
                 if value is not None:
-                    b[key] = value
+                    if key == "settings":
+                        # Deep-merge settings sub-object
+                        existing = b.get("settings", {})
+                        for sk, sv in value.items():
+                            if sv is not None:
+                                existing[sk] = sv
+                        b["settings"] = existing
+                    else:
+                        b[key] = value
             _save_bridges(bridges)
             return b
     return None

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Copy, Check, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, ToggleLeft, ToggleRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { SettingsTabs } from '../components/SettingsTabs';
-import type { BridgeConfig } from '../types';
+import type { BridgeConfig, BridgeSettings } from '../types';
 
 export function BridgeSettingsPage() {
   const queryClient = useQueryClient();
@@ -27,9 +27,19 @@ export function BridgeSettingsPage() {
     },
   });
 
+  const [expandedBridge, setExpandedBridge] = useState<string | null>(null);
+
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.updateBridge(id, { enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bridges'] });
+    },
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: ({ id, settings }: { id: string; settings: BridgeSettings }) =>
+      api.updateBridge(id, { settings }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bridges'] });
     },
@@ -150,57 +160,162 @@ export function BridgeSettingsPage() {
             </p>
           ) : (
             <div className="space-y-1">
-              {bridges.map((bridge) => (
+              {bridges.map((bridge) => {
+                const isExpanded = expandedBridge === bridge.id;
+                const s = bridge.settings ?? {};
+                const neg = bridge.negotiatedSettings;
+                return (
                 <div
                   key={bridge.id}
-                  className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                  className="bg-gray-800 border border-gray-700 rounded-lg"
                 >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        !bridge.enabled ? 'bg-gray-600' : bridge.connected ? 'bg-green-500' : 'bg-gray-600'
-                      }`}
-                      title={!bridge.enabled ? 'Disabled' : bridge.connected ? 'Online' : 'Offline'}
-                    />
-                    <span className={`text-sm ${bridge.enabled ? 'text-gray-200' : 'text-gray-500'}`}>
-                      {bridge.name}
-                    </span>
-                    <span className={`text-xs ${
-                      !bridge.enabled ? 'text-gray-600' : bridge.connected ? 'text-green-400' : 'text-gray-500'
-                    }`}>
-                      {!bridge.enabled ? 'Disabled' : bridge.connected ? 'Online' : 'Offline'}
-                    </span>
-                    <span className="text-xs text-gray-600">
-                      {new Date(bridge.createdAt).toLocaleDateString()}
-                    </span>
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setExpandedBridge(isExpanded ? null : bridge.id)}
+                        className="text-gray-500 hover:text-gray-300 transition-colors"
+                      >
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          !bridge.enabled ? 'bg-gray-600' : bridge.connected ? 'bg-green-500' : 'bg-gray-600'
+                        }`}
+                        title={!bridge.enabled ? 'Disabled' : bridge.connected ? 'Online' : 'Offline'}
+                      />
+                      <span className={`text-sm ${bridge.enabled ? 'text-gray-200' : 'text-gray-500'}`}>
+                        {bridge.name}
+                      </span>
+                      <span className={`text-xs ${
+                        !bridge.enabled ? 'text-gray-600' : bridge.connected ? 'text-green-400' : 'text-gray-500'
+                      }`}>
+                        {!bridge.enabled ? 'Disabled' : bridge.connected ? 'Online' : 'Offline'}
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        {new Date(bridge.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => toggleMutation.mutate({ id: bridge.id, enabled: !bridge.enabled })}
+                        disabled={toggleMutation.isPending}
+                        className={`p-1 transition-colors ${
+                          bridge.enabled
+                            ? 'text-green-400 hover:text-green-300'
+                            : 'text-gray-600 hover:text-gray-400'
+                        }`}
+                        title={bridge.enabled ? 'Disable bridge' : 'Enable bridge'}
+                      >
+                        {bridge.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeletingBridge(bridge);
+                          setDeleteConfirmName('');
+                          deleteMutation.reset();
+                        }}
+                        className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                        title="Delete bridge"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => toggleMutation.mutate({ id: bridge.id, enabled: !bridge.enabled })}
-                      disabled={toggleMutation.isPending}
-                      className={`p-1 transition-colors ${
-                        bridge.enabled
-                          ? 'text-green-400 hover:text-green-300'
-                          : 'text-gray-600 hover:text-gray-400'
-                      }`}
-                      title={bridge.enabled ? 'Disable bridge' : 'Enable bridge'}
-                    >
-                      {bridge.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDeletingBridge(bridge);
-                        setDeleteConfirmName('');
-                        deleteMutation.reset();
-                      }}
-                      className="p-1 text-gray-500 hover:text-red-400 transition-colors"
-                      title="Delete bridge"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  {isExpanded && (
+                    <div className="border-t border-gray-700 px-4 py-3 space-y-3">
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wide">Settings</h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Compression toggle */}
+                        <div className="flex items-center justify-between col-span-2">
+                          <div>
+                            <span className="text-sm text-gray-300">Compression</span>
+                            {neg && <span className="ml-2 text-xs text-gray-500">active: {neg.compression ? 'on' : 'off'}</span>}
+                          </div>
+                          <button
+                            onClick={() => settingsMutation.mutate({
+                              id: bridge.id,
+                              settings: { compression: !(s.compression ?? true) },
+                            })}
+                            disabled={settingsMutation.isPending}
+                            className={`p-1 transition-colors ${
+                              (s.compression ?? true) ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
+                            }`}
+                          >
+                            {(s.compression ?? true) ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          </button>
+                        </div>
+                        {/* Report interval */}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">
+                            Report interval (sec)
+                            {neg && <span className="ml-1 text-gray-600">active: {neg.reportIntervalSec}</span>}
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={60}
+                            step={0.5}
+                            defaultValue={s.reportIntervalSec ?? 5}
+                            onBlur={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v) && v >= 1 && v <= 60) {
+                                settingsMutation.mutate({ id: bridge.id, settings: { reportIntervalSec: v } });
+                              }
+                            }}
+                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        {/* Ping interval */}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">
+                            Ping interval (sec)
+                            {neg && <span className="ml-1 text-gray-600">active: {neg.pingIntervalSec}</span>}
+                          </label>
+                          <input
+                            type="number"
+                            min={2}
+                            max={120}
+                            step={1}
+                            defaultValue={s.pingIntervalSec ?? 10}
+                            onBlur={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v) && v >= 2 && v <= 120) {
+                                settingsMutation.mutate({ id: bridge.id, settings: { pingIntervalSec: v } });
+                              }
+                            }}
+                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        {/* Coalesce ms */}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">
+                            I/O coalesce (ms)
+                            {neg && <span className="ml-1 text-gray-600">active: {neg.coalesceMs}</span>}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={50}
+                            step={1}
+                            defaultValue={s.coalesceMs ?? 2}
+                            onBlur={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              if (!isNaN(v) && v >= 0 && v <= 50) {
+                                settingsMutation.mutate({ id: bridge.id, settings: { coalesceMs: v } });
+                              }
+                            }}
+                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200 outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                      {settingsMutation.isError && (
+                        <p className="text-xs text-red-400">{settingsMutation.error.message}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

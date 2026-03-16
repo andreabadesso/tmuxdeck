@@ -80,6 +80,14 @@ class BridgeConnection:
         # Latency tracking
         self._latency_samples: deque[float] = deque(maxlen=30)
         self._ping_sent_at: float | None = None
+        # Traffic stats (updated on each pong, reset after)
+        self.ws_rx_bin_frames: int = 0
+        self.ws_rx_bin_bytes: int = 0
+        self.ws_rx_text_frames: int = 0
+        self.ws_fwd_tasks: int = 0
+        # Capability negotiation
+        self.capabilities: dict | None = None
+        self.negotiated_settings: dict | None = None
 
     def allocate_channel(self) -> int:
         """Allocate the next available channel ID."""
@@ -218,6 +226,53 @@ class BridgeConnection:
     @property
     def latency_history(self) -> list[float]:
         return list(self._latency_samples)
+
+    @staticmethod
+    def negotiate_settings(
+        capabilities: dict,
+        stored_settings: dict,
+    ) -> dict:
+        """Clamp stored settings to bridge-advertised capability ranges."""
+        supported = capabilities.get("supported", {})
+        result: dict = {}
+
+        # Defaults when no stored setting exists
+        defaults = {
+            "compression": True,
+            "report_interval_sec": 5.0,
+            "ping_interval_sec": 10.0,
+            "coalesce_ms": 2,
+        }
+
+        for key, default_val in defaults.items():
+            value = stored_settings.get(key, default_val)
+            cap = supported.get(key)
+            if cap is None:
+                # Bridge doesn't advertise this capability — use default
+                result[key] = default_val
+            elif isinstance(cap, bool):
+                # Boolean capability — use stored value
+                result[key] = bool(value)
+            elif isinstance(cap, dict):
+                # Range capability — clamp to min/max
+                mn = cap.get("min", value)
+                mx = cap.get("max", value)
+                if isinstance(value, (int, float)):
+                    result[key] = type(default_val)(max(mn, min(mx, value)))
+                else:
+                    result[key] = cap.get("default", default_val)
+            else:
+                result[key] = default_val
+
+        return result
+
+    async def push_settings(self, stored_settings: dict) -> None:
+        """Re-negotiate against stored capabilities and send settings message."""
+        if not self.capabilities:
+            return
+        negotiated = self.negotiate_settings(self.capabilities, stored_settings)
+        self.negotiated_settings = negotiated
+        await self.send_json({"type": "settings", "settings": negotiated})
 
     def set_disconnected(self) -> None:
         """Mark bridge as disconnected but keep terminal registrations alive."""

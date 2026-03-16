@@ -73,6 +73,7 @@ export interface ContainerListResponse {
   containers: Container[];
   dockerError?: string;
   missingSnapshotSessions?: number;
+  driftedSnapshotSessions?: number;
 }
 
 export interface Template {
@@ -179,6 +180,13 @@ export interface RelayConfig {
   connected: boolean;
 }
 
+export interface BridgeSettings {
+  compression?: boolean;
+  reportIntervalSec?: number;
+  pingIntervalSec?: number;
+  coalesceMs?: number;
+}
+
 export interface BridgeConfig {
   id: string;
   name: string;
@@ -194,6 +202,13 @@ export interface BridgeConfig {
   latencyP99Ms: number | null;
   latencyJitterMs: number | null;
   latencyHistory: number[];
+  wsRxBinFrames: number;
+  wsRxBinBytes: number;
+  wsRxTextFrames: number;
+  wsFwdTasks: number;
+  settings?: BridgeSettings | null;
+  capabilities?: Record<string, unknown> | null;
+  negotiatedSettings?: BridgeSettings | null;
 }
 
 export interface DebugLogEntry {

@@ -15,6 +15,12 @@ function formatMs(ms: number | null | undefined): string {
   return `${Math.round(ms).toLocaleString()}ms`;
 }
 
+function formatBytes(n: number): string {
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)}MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${n}B`;
+}
+
 function sparkline(samples: number[]): string {
   if (samples.length === 0) return '';
   const blocks = ' ▁▂▃▄▅▆▇█';
@@ -84,6 +90,16 @@ export function BridgeLatencyOverlay({ bridgeId }: Props) {
           {bridge.latencyHistory.length > 0 && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', color: '#e4e4e7', letterSpacing: '0.5px' }}>
               {sparkline(bridge.latencyHistory)}
+            </div>
+          )}
+          {(bridge.wsRxBinFrames > 0 || bridge.wsRxTextFrames > 0) && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ color: '#a1a1aa', marginBottom: 4 }}>Traffic (last 10s)</div>
+              <div className="grid gap-1" style={{ gridTemplateColumns: 'auto 1fr', color: '#a1a1aa' }}>
+                <span>RX bin</span><span style={{ color: '#e4e4e7', textAlign: 'right' }}>{bridge.wsRxBinFrames} ({formatBytes(bridge.wsRxBinBytes)})</span>
+                <span>RX txt</span><span style={{ color: '#e4e4e7', textAlign: 'right' }}>{bridge.wsRxTextFrames}</span>
+                <span>Fwd tasks</span><span style={{ color: '#e4e4e7', textAlign: 'right' }}>{bridge.wsFwdTasks}</span>
+              </div>
             </div>
           )}
         </div>

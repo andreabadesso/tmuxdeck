@@ -38,11 +38,15 @@ def _set_tcp_nodelay(websocket: WebSocket) -> None:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
 
-async def _ping_loop(conn: BridgeConnection) -> None:
+async def _ping_loop(conn: BridgeConnection, interval: float = PING_INTERVAL) -> None:
     """Periodically send ping to bridge agent to measure latency."""
     try:
         while True:
-            await asyncio.sleep(PING_INTERVAL)
+            # Use negotiated interval if available
+            actual_interval = interval
+            if conn.negotiated_settings:
+                actual_interval = conn.negotiated_settings.get("ping_interval_sec", interval)
+            await asyncio.sleep(actual_interval)
             if not conn.connected or conn.ws is None:
                 break
             conn.mark_ping_sent()
@@ -238,6 +242,21 @@ async def bridge_ws(websocket: WebSocket):
                     if req_id:
                         conn.resolve_pending(req_id, msg)
 
+                elif msg_type == "capabilities":
+                    conn.capabilities = msg
+                    # Load stored settings and negotiate
+                    bridge_cfg = store.get_bridge_config(bridge_id)
+                    stored = bridge_cfg.get("settings", {}) if bridge_cfg else {}
+                    negotiated = conn.negotiate_settings(msg, stored)
+                    conn.negotiated_settings = negotiated
+                    await conn.send_json({"type": "settings", "settings": negotiated})
+                    logger.info("Bridge [%s] capabilities received, sent settings: %s", name, negotiated)
+
+                elif msg_type == "settings_ack":
+                    applied = msg.get("applied", {})
+                    conn.negotiated_settings = applied
+                    logger.info("Bridge [%s] settings_ack: %s", name, applied)
+
                 elif msg_type == "pong":
                     conn.record_pong()
                     rtt = conn.latency_last_ms
@@ -247,6 +266,11 @@ async def bridge_ws(websocket: WebSocket):
                         _rx_bin_frames, _format_bytes(_rx_bin_bytes),
                         _rx_text_frames, _fwd_tasks,
                     )
+                    # Store for API consumption
+                    conn.ws_rx_bin_frames = _rx_bin_frames
+                    conn.ws_rx_bin_bytes = _rx_bin_bytes
+                    conn.ws_rx_text_frames = _rx_text_frames
+                    conn.ws_fwd_tasks = _fwd_tasks
                     _rx_bin_frames = 0
                     _rx_bin_bytes = 0
                     _rx_text_frames = 0

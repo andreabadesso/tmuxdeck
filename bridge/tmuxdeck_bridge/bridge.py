@@ -276,6 +276,17 @@ class Bridge:
         msg = json.loads(raw)
 
         if msg.get("type") == "auth_ok":
+            # Send capabilities for settings negotiation
+            await ws.send(json.dumps({
+                "type": "capabilities",
+                "version": 1,
+                "supported": {
+                    "compression": True,
+                    "report_interval_sec": {"min": 1.0, "max": 60.0, "default": self.config.session_report_interval},
+                    "ping_interval_sec": {"min": 2.0, "max": 120.0, "default": self.config.ping_interval},
+                    "coalesce_ms": {"min": 0, "max": 50, "default": 2},
+                },
+            }))
             return True
         elif msg.get("type") == "auth_error":
             logger.error("Auth rejected: %s", msg.get("reason", "unknown"))
@@ -382,6 +393,8 @@ class Bridge:
             await self._handle_file_read(msg)
         elif msg_type == "file_write":
             await self._handle_file_write(msg)
+        elif msg_type == "settings":
+            await self._apply_settings(msg.get("settings", {}))
         elif msg_type == "ping":
             pong = json.dumps({"type": "pong"})
             t0 = time.monotonic()
@@ -390,6 +403,41 @@ class Bridge:
             self._ws_stats["tx_text_frames"] += 1
         else:
             logger.debug("Unknown message type: %s", msg_type)
+
+    async def _apply_settings(self, settings: dict) -> None:
+        """Apply negotiated settings from the backend."""
+        applied = {}
+
+        if "report_interval_sec" in settings:
+            val = float(settings["report_interval_sec"])
+            self.config.session_report_interval = val
+            applied["report_interval_sec"] = val
+            logger.info("Applied report_interval_sec=%.1f", val)
+
+        if "ping_interval_sec" in settings:
+            val = float(settings["ping_interval_sec"])
+            self.config.ping_interval = val
+            applied["ping_interval_sec"] = val
+            logger.info("Applied ping_interval_sec=%.1f (takes effect on next reconnect)", val)
+
+        if "coalesce_ms" in settings:
+            val = int(settings["coalesce_ms"])
+            # Update the module-level coalesce value
+            from . import terminal
+            terminal._COALESCE_MS = val / 1000.0
+            applied["coalesce_ms"] = val
+            logger.info("Applied coalesce_ms=%d", val)
+
+        if "compression" in settings:
+            val = bool(settings["compression"])
+            self.config.compression = "deflate" if val else "none"
+            applied["compression"] = val
+            logger.info("Applied compression=%s (takes effect on next reconnect)", val)
+
+        # Send acknowledgment
+        if self._ws:
+            await self._ws.send(json.dumps({"type": "settings_ack", "applied": applied}))
+            self._ws_stats["tx_text_frames"] += 1
 
     async def _handle_attach(self, msg: dict) -> None:
         """Attach to a tmux session and start a PTY."""

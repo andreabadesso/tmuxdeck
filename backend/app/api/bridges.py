@@ -11,50 +11,55 @@ from ..services.bridge_manager import BridgeManager
 router = APIRouter(prefix="/api/v1/bridges", tags=["bridges"])
 
 
+def _build_response(cfg: dict, bm: BridgeManager, *, include_token: bool = False) -> BridgeConfigResponse:
+    conn = bm.get_bridge(cfg["id"])
+    resp = BridgeConfigResponse(
+        id=cfg["id"],
+        name=cfg["name"],
+        token=cfg.get("token") if include_token else None,
+        connected=bm.is_connected(cfg["id"]),
+        enabled=cfg.get("enabled", True),
+        created_at=cfg["createdAt"],
+        settings=cfg.get("settings"),
+    )
+    if conn:
+        resp.latency_last_ms = conn.latency_last_ms
+        resp.latency_min_ms = conn.latency_min_ms
+        resp.latency_max_ms = conn.latency_max_ms
+        resp.latency_p90_ms = conn.latency_p90_ms
+        resp.latency_p95_ms = conn.latency_p95_ms
+        resp.latency_p99_ms = conn.latency_p99_ms
+        resp.latency_jitter_ms = conn.latency_jitter_ms
+        resp.latency_history = conn.latency_history
+        resp.ws_rx_bin_frames = conn.ws_rx_bin_frames
+        resp.ws_rx_bin_bytes = conn.ws_rx_bin_bytes
+        resp.ws_rx_text_frames = conn.ws_rx_text_frames
+        resp.ws_fwd_tasks = conn.ws_fwd_tasks
+        resp.capabilities = conn.capabilities
+        resp.negotiated_settings = conn.negotiated_settings
+    return resp
+
+
 @router.get("", response_model=list[BridgeConfigResponse])
 async def list_bridges():
     configs = store.list_bridge_configs()
     bm = BridgeManager.get()
-    results = []
-    for cfg in configs:
-        conn = bm.get_bridge(cfg["id"])
-        resp = BridgeConfigResponse(
-            id=cfg["id"],
-            name=cfg["name"],
-            token=None,  # never expose token in list
-            connected=bm.is_connected(cfg["id"]),
-            enabled=cfg.get("enabled", True),
-            created_at=cfg["createdAt"],
-        )
-        if conn:
-            resp.latency_last_ms = conn.latency_last_ms
-            resp.latency_min_ms = conn.latency_min_ms
-            resp.latency_max_ms = conn.latency_max_ms
-            resp.latency_p90_ms = conn.latency_p90_ms
-            resp.latency_p95_ms = conn.latency_p95_ms
-            resp.latency_p99_ms = conn.latency_p99_ms
-            resp.latency_jitter_ms = conn.latency_jitter_ms
-            resp.latency_history = conn.latency_history
-        results.append(resp)
-    return results
+    return [_build_response(cfg, bm) for cfg in configs]
 
 
 @router.post("", response_model=BridgeConfigResponse, status_code=201)
 async def create_bridge(req: CreateBridgeRequest):
     cfg = store.create_bridge_config(req.name)
-    return BridgeConfigResponse(
-        id=cfg["id"],
-        name=cfg["name"],
-        token=cfg["token"],  # shown once on creation
-        connected=False,
-        enabled=cfg.get("enabled", True),
-        created_at=cfg["createdAt"],
-    )
+    bm = BridgeManager.get()
+    return _build_response(cfg, bm, include_token=True)
 
 
 @router.patch("/{bridge_id}", response_model=BridgeConfigResponse)
 async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
     updates = req.model_dump(exclude_none=True)
+    # Serialize settings sub-model to dict
+    if req.settings is not None:
+        updates["settings"] = req.settings.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
 
@@ -76,14 +81,13 @@ async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
             except Exception:
                 pass
 
-    return BridgeConfigResponse(
-        id=cfg["id"],
-        name=cfg["name"],
-        token=None,
-        connected=bm.is_connected(cfg["id"]),
-        enabled=cfg.get("enabled", True),
-        created_at=cfg["createdAt"],
-    )
+    # If settings were updated, push to connected bridge
+    if req.settings is not None:
+        conn = bm.get_bridge(bridge_id)
+        if conn and conn.connected:
+            await conn.push_settings(cfg.get("settings", {}))
+
+    return _build_response(cfg, bm)
 
 
 @router.delete("/{bridge_id}", status_code=204)

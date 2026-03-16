@@ -2,6 +2,7 @@ import type { ApiClient } from './client';
 import type {
   AuthStatus,
   BridgeConfig,
+  BridgeSettings,
   RelayConfig,
   Container,
   ContainerListResponse,
@@ -319,7 +320,7 @@ export const httpApi: ApiClient = {
   listBridges: () => request<BridgeConfig[]>('/bridges'),
   createBridge: (name: string) =>
     request<BridgeConfig>('/bridges', { method: 'POST', body: JSON.stringify({ name }) }),
-  updateBridge: (id: string, data: { enabled?: boolean }) =>
+  updateBridge: (id: string, data: { enabled?: boolean; settings?: BridgeSettings }) =>
     request<BridgeConfig>(`/bridges/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteBridge: (id: string) =>
     request<void>(`/bridges/${id}`, { method: 'DELETE' }),
@@ -343,7 +344,7 @@ export const httpApi: ApiClient = {
 
   // Snapshot
   getSnapshot: () => request<Snapshot>('/snapshot'),
-  restoreSnapshot: (req?: { containerId?: string; sessionName?: string; dryRun?: boolean }) =>
+  restoreSnapshot: (req?: { containerId?: string; sessionName?: string; dryRun?: boolean; includeDrifted?: boolean }) =>
     request<RestoreResult>('/snapshot/restore', { method: 'POST', body: JSON.stringify(req ?? {}) }),
   dismissSnapshotSession: (containerId: string, sessionName: string) =>
     request<void>(`/snapshot/container/${encodeURIComponent(containerId)}/session/${encodeURIComponent(sessionName)}`, { method: 'DELETE' }),

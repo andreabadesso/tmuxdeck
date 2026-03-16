@@ -81,6 +81,7 @@ class ContainerListResponse(CamelModel):
     containers: list[ContainerResponse]
     docker_error: str | None = None
     missing_snapshot_sessions: int = 0
+    drifted_snapshot_sessions: int = 0
 
 
 class CreateContainerRequest(CamelModel):
@@ -228,12 +229,20 @@ class DismissRequest(CamelModel):
 # --- Bridge ---
 
 
+class BridgeSettings(CamelModel):
+    compression: bool | None = None
+    report_interval_sec: float | None = None
+    ping_interval_sec: float | None = None
+    coalesce_ms: int | None = None
+
+
 class CreateBridgeRequest(CamelModel):
     name: str
 
 
 class UpdateBridgeRequest(CamelModel):
     enabled: bool | None = None
+    settings: BridgeSettings | None = None
 
 
 class BridgeConfigResponse(CamelModel):
@@ -251,6 +260,13 @@ class BridgeConfigResponse(CamelModel):
     latency_p99_ms: float | None = None
     latency_jitter_ms: float | None = None
     latency_history: list[float] = []
+    ws_rx_bin_frames: int = 0
+    ws_rx_bin_bytes: int = 0
+    ws_rx_text_frames: int = 0
+    ws_fwd_tasks: int = 0
+    settings: dict | None = None
+    capabilities: dict | None = None
+    negotiated_settings: dict | None = None
 
 
 # --- Ordering ---

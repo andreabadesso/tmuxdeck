@@ -11,6 +11,7 @@ import type {
   TmuxSession,
   TmuxWindow,
   BridgeConfig,
+  BridgeSettings,
   RelayConfig,
   Snapshot,
   RestoreResult,
@@ -61,7 +62,7 @@ export interface ApiClient {
   // Bridges
   listBridges(): Promise<BridgeConfig[]>;
   createBridge(name: string): Promise<BridgeConfig>;
-  updateBridge(id: string, data: { enabled?: boolean }): Promise<BridgeConfig>;
+  updateBridge(id: string, data: { enabled?: boolean; settings?: BridgeSettings }): Promise<BridgeConfig>;
   deleteBridge(id: string): Promise<void>;
 
   // Ordering
@@ -76,7 +77,7 @@ export interface ApiClient {
 
   // Snapshot
   getSnapshot(): Promise<Snapshot>;
-  restoreSnapshot(req?: { containerId?: string; sessionName?: string; dryRun?: boolean }): Promise<RestoreResult>;
+  restoreSnapshot(req?: { containerId?: string; sessionName?: string; dryRun?: boolean; includeDrifted?: boolean }): Promise<RestoreResult>;
   dismissSnapshotSession(containerId: string, sessionName: string): Promise<void>;
 }
 
