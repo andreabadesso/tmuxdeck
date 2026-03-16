@@ -6,6 +6,63 @@ import { SettingsTabs } from '../components/SettingsTabs';
 import { InfoTooltip } from '../components/InfoTooltip';
 import type { BridgeConfig, BridgeSettings } from '../types';
 
+function latencyColor(ms: number | null): string {
+  if (ms == null) return '#666';
+  if (ms < 50) return '#4ade80';
+  if (ms < 150) return '#facc15';
+  return '#f87171';
+}
+
+function formatMs(ms: number | null | undefined): string {
+  if (ms == null) return '\u2014';
+  return `${Math.round(ms).toLocaleString()}ms`;
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)}MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${n}B`;
+}
+
+function sparkline(samples: number[]): string {
+  if (samples.length === 0) return '';
+  const blocks = ' \u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+  const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  const range = max - min || 1;
+  return samples.map(v => blocks[Math.round(((v - min) / range) * 8)]).join('');
+}
+
+function autoTuneExplanation(
+  setting: 'compression' | 'reportIntervalSec' | 'pingIntervalSec' | 'coalesceMs',
+  bridge: BridgeConfig,
+): string | null {
+  if (!bridge.autoTune || !bridge.connected) return null;
+  const p90 = bridge.latencyP90Ms;
+  const jitter = bridge.latencyJitterMs;
+  if (p90 == null || jitter == null) return null;
+
+  switch (setting) {
+    case 'compression':
+      return p90 > 100
+        ? `Enabled: P90 latency (${Math.round(p90)}ms) > 100ms suggests a slow link`
+        : `Disabled: P90 latency (${Math.round(p90)}ms) \u2264 100ms, saving CPU`;
+    case 'coalesceMs':
+      if (p90 < 20) return `0ms: very low P90 (${Math.round(p90)}ms), no buffering needed`;
+      if (p90 <= 80) return `Low coalesce: moderate P90 (${Math.round(p90)}ms)`;
+      if (jitter > 30) return `Higher coalesce: jitter (${Math.round(jitter)}ms) > 30ms adds extra buffer`;
+      return `Scaled with P90 (${Math.round(p90)}ms) to reduce frame overhead`;
+    case 'pingIntervalSec':
+      if (jitter > 50) return `Fast pings: high jitter (${Math.round(jitter)}ms) needs close monitoring`;
+      if (jitter > 20) return `Moderate pings: jitter (${Math.round(jitter)}ms) warrants frequent checks`;
+      return `Relaxed pings: low jitter (${Math.round(jitter)}ms), connection is stable`;
+    case 'reportIntervalSec':
+      return jitter > 50
+        ? `Faster reports: high jitter (${Math.round(jitter)}ms) needs quicker status updates`
+        : `Standard interval: jitter (${Math.round(jitter)}ms) is acceptable`;
+  }
+}
+
 export function BridgeSettingsPage() {
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState('');
@@ -17,6 +74,7 @@ export function BridgeSettingsPage() {
   const { data: bridges = [], error } = useQuery({
     queryKey: ['bridges'],
     queryFn: () => api.listBridges(),
+    refetchInterval: 10_000,
   });
 
   const createMutation = useMutation({
@@ -274,6 +332,9 @@ export function BridgeSettingsPage() {
                               ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                           </button>
                         </div>
+                        {bridge.autoTune && autoTuneExplanation('compression', bridge) && (
+                          <p className="col-span-2 -mt-2 text-xs text-blue-400/70 italic pl-1">{autoTuneExplanation('compression', bridge)}</p>
+                        )}
                         {/* Report interval */}
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
@@ -301,6 +362,9 @@ export function BridgeSettingsPage() {
                             disabled={bridge.autoTune}
                             className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
+                          {bridge.autoTune && autoTuneExplanation('reportIntervalSec', bridge) && (
+                            <p className="mt-1 text-xs text-blue-400/70 italic">{autoTuneExplanation('reportIntervalSec', bridge)}</p>
+                          )}
                         </div>
                         {/* Ping interval */}
                         <div>
@@ -329,6 +393,9 @@ export function BridgeSettingsPage() {
                             disabled={bridge.autoTune}
                             className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
+                          {bridge.autoTune && autoTuneExplanation('pingIntervalSec', bridge) && (
+                            <p className="mt-1 text-xs text-blue-400/70 italic">{autoTuneExplanation('pingIntervalSec', bridge)}</p>
+                          )}
                         </div>
                         {/* Coalesce ms */}
                         <div>
@@ -357,10 +424,70 @@ export function BridgeSettingsPage() {
                             disabled={bridge.autoTune}
                             className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
                           />
+                          {bridge.autoTune && autoTuneExplanation('coalesceMs', bridge) && (
+                            <p className="mt-1 text-xs text-blue-400/70 italic">{autoTuneExplanation('coalesceMs', bridge)}</p>
+                          )}
                         </div>
                       </div>
                       {settingsMutation.isError && (
                         <p className="text-xs text-red-400">{settingsMutation.error.message}</p>
+                      )}
+
+                      {/* Network Statistics */}
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wide pt-3 border-t border-gray-700">
+                        Network Statistics
+                      </h3>
+                      {bridge.connected && bridge.latencyLastMs != null ? (
+                        <>
+                          <div className="grid grid-cols-4 gap-2">
+                            {([
+                              ['Current', bridge.latencyLastMs],
+                              ['Min', bridge.latencyMinMs],
+                              ['Max', bridge.latencyMaxMs],
+                              ['Jitter', bridge.latencyJitterMs],
+                              ['P90', bridge.latencyP90Ms],
+                              ['P95', bridge.latencyP95Ms],
+                              ['P99', bridge.latencyP99Ms],
+                            ] as const).map(([label, val]) => (
+                              <div key={label} className="text-center">
+                                <div className="text-xs text-gray-500">{label}</div>
+                                <div
+                                  className="text-sm font-mono"
+                                  style={{ color: label === 'Current' ? latencyColor(val ?? null) : '#e4e4e7' }}
+                                >
+                                  {formatMs(val)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {bridge.latencyHistory.length > 0 && (
+                            <div className="font-mono text-sm tracking-wider text-gray-300" title="Latency history">
+                              {sparkline(bridge.latencyHistory)}
+                            </div>
+                          )}
+                          {(bridge.wsRxBinFrames > 0 || bridge.wsRxTextFrames > 0) && (
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="text-center">
+                                <div className="text-xs text-gray-500">RX binary</div>
+                                <div className="text-sm font-mono text-gray-200">
+                                  {bridge.wsRxBinFrames} <span className="text-gray-500">({formatBytes(bridge.wsRxBinBytes)})</span>
+                                </div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-xs text-gray-500">RX text</div>
+                                <div className="text-sm font-mono text-gray-200">{bridge.wsRxTextFrames}</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-xs text-gray-500">Fwd tasks</div>
+                                <div className="text-sm font-mono text-gray-200">{bridge.wsFwdTasks}</div>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-600">
+                          {bridge.connected ? 'Waiting for latency data\u2026' : 'Bridge is offline'}
+                        </p>
                       )}
                     </div>
                   )}
