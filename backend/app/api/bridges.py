@@ -17,14 +17,25 @@ async def list_bridges():
     bm = BridgeManager.get()
     results = []
     for cfg in configs:
-        results.append(BridgeConfigResponse(
+        conn = bm.get_bridge(cfg["id"])
+        resp = BridgeConfigResponse(
             id=cfg["id"],
             name=cfg["name"],
             token=None,  # never expose token in list
             connected=bm.is_connected(cfg["id"]),
             enabled=cfg.get("enabled", True),
             created_at=cfg["createdAt"],
-        ))
+        )
+        if conn:
+            resp.latency_last_ms = conn.latency_last_ms
+            resp.latency_min_ms = conn.latency_min_ms
+            resp.latency_max_ms = conn.latency_max_ms
+            resp.latency_p90_ms = conn.latency_p90_ms
+            resp.latency_p95_ms = conn.latency_p95_ms
+            resp.latency_p99_ms = conn.latency_p99_ms
+            resp.latency_jitter_ms = conn.latency_jitter_ms
+            resp.latency_history = conn.latency_history
+        results.append(resp)
     return results
 
 

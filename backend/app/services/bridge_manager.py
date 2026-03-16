@@ -6,8 +6,11 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import struct
+import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 
 from fastapi import WebSocket
@@ -74,6 +77,9 @@ class BridgeConnection:
         self._terminal_relays: dict[int, TerminalInfo] = {}  # channel_id → TerminalInfo
         self._next_channel: int = 1
         self._cleanup_task: asyncio.Task | None = None
+        # Latency tracking
+        self._latency_samples: deque[float] = deque(maxlen=30)
+        self._ping_sent_at: float | None = None
 
     def allocate_channel(self) -> int:
         """Allocate the next available channel ID."""
@@ -147,6 +153,72 @@ class BridgeConnection:
         if fut and not fut.done():
             fut.set_result(result)
 
+    def mark_ping_sent(self) -> None:
+        """Record the time a ping was sent. Skip if a previous ping is still pending."""
+        if self._ping_sent_at is None:
+            self._ping_sent_at = time.monotonic()
+
+    def record_pong(self) -> None:
+        """Compute RTT from the last ping and store the sample."""
+        if self._ping_sent_at is not None:
+            rtt_ms = (time.monotonic() - self._ping_sent_at) * 1000
+            self._latency_samples.append(rtt_ms)
+            self._ping_sent_at = None
+
+    def _percentile(self, p: float) -> float | None:
+        """Compute the p-th percentile from the rolling sample window."""
+        if not self._latency_samples:
+            return None
+        s = sorted(self._latency_samples)
+        k = (len(s) - 1) * (p / 100)
+        lo = int(k)
+        hi = min(lo + 1, len(s) - 1)
+        frac = k - lo
+        return s[lo] + (s[hi] - s[lo]) * frac
+
+    @property
+    def latency_p90_ms(self) -> float | None:
+        return self._percentile(90)
+
+    @property
+    def latency_p95_ms(self) -> float | None:
+        return self._percentile(95)
+
+    @property
+    def latency_p99_ms(self) -> float | None:
+        return self._percentile(99)
+
+    @property
+    def latency_last_ms(self) -> float | None:
+        if not self._latency_samples:
+            return None
+        return self._latency_samples[-1]
+
+    @property
+    def latency_min_ms(self) -> float | None:
+        if not self._latency_samples:
+            return None
+        return min(self._latency_samples)
+
+    @property
+    def latency_max_ms(self) -> float | None:
+        if not self._latency_samples:
+            return None
+        return max(self._latency_samples)
+
+    @property
+    def latency_jitter_ms(self) -> float | None:
+        """Standard deviation of latency samples."""
+        if len(self._latency_samples) < 2:
+            return None
+        avg = sum(self._latency_samples) / len(self._latency_samples)
+        variance = sum((s - avg) ** 2 for s in self._latency_samples) / len(self._latency_samples)
+        return math.sqrt(variance)
+
+    @property
+    def latency_history(self) -> list[float]:
+        return list(self._latency_samples)
+
     def set_disconnected(self) -> None:
         """Mark bridge as disconnected but keep terminal registrations alive."""
         self.connected = False
@@ -170,6 +242,8 @@ class BridgeConnection:
         self._pending.clear()
         self.ws = new_ws
         self.connected = True
+        self._latency_samples.clear()
+        self._ping_sent_at = None
         logger.info("Bridge reconnected: %s (%s), %d terminals to reattach",
                      self.bridge_id, self.name, len(self._terminal_relays))
 

@@ -243,6 +243,14 @@ class BridgeConfigResponse(CamelModel):
     connected: bool = False
     enabled: bool = True
     created_at: str
+    latency_last_ms: float | None = None
+    latency_min_ms: float | None = None
+    latency_max_ms: float | None = None
+    latency_p90_ms: float | None = None
+    latency_p95_ms: float | None = None
+    latency_p99_ms: float | None = None
+    latency_jitter_ms: float | None = None
+    latency_history: list[float] = []
 
 
 # --- Ordering ---

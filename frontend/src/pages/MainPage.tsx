@@ -20,6 +20,7 @@ import { isWindowSelection, isFoldedSelection, isFoldedContainerSelection } from
 import { sortSessionsByOrder } from '../utils/sessionOrder';
 import { DEFAULT_HOTKEYS, matchesBinding, matchesDoublePressKey } from '../utils/hotkeys';
 import { FoldedContainerPreview } from '../components/FoldedContainerPreview';
+import { BridgeLatencyOverlay } from '../components/BridgeLatencyOverlay';
 
 /**
  * Try to restore a saved selection from a folded container.
@@ -799,24 +800,29 @@ export function MainPage() {
             </div>
           )}
           {displayedSession && !isFolded && !isFoldedContainer && (
-            <div className="absolute top-2 right-2 z-30 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity">
-              <button
-                onClick={() => { poolRef.current?.clearBufferActive(); poolRef.current?.focusActive(); }}
-                className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
-                title="Clear terminal buffer"
-              >
-                <Trash2 size={14} />
-              </button>
-              <button
-                onClick={() => {
-                  poolRef.current?.refitActive();
-                  poolRef.current?.focusActive();
-                }}
-                className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
-                title="Fit terminal to window"
-              >
-                <Maximize2 size={14} />
-              </button>
+            <div className="absolute top-2 right-2 z-30 flex items-center gap-1 group/toolbar">
+              <div className="flex items-center gap-1 opacity-0 group-hover/toolbar:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button
+                  onClick={() => { poolRef.current?.clearBufferActive(); poolRef.current?.focusActive(); }}
+                  className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
+                  title="Clear terminal buffer"
+                >
+                  <Trash2 size={14} />
+                </button>
+                <button
+                  onClick={() => {
+                    poolRef.current?.refitActive();
+                    poolRef.current?.focusActive();
+                  }}
+                  className="p-1.5 rounded bg-gray-800/80 text-gray-500 hover:text-gray-200 hover:bg-gray-700/90 transition-colors"
+                  title="Fit terminal to window"
+                >
+                  <Maximize2 size={14} />
+                </button>
+              </div>
+              {displayedSession.containerId.startsWith('bridge:') && (
+                <BridgeLatencyOverlay bridgeId={displayedSession.containerId.split(':')[1]} />
+              )}
             </div>
           )}
           {isPreview && (

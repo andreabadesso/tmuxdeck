@@ -186,6 +186,14 @@ export interface BridgeConfig {
   connected: boolean;
   enabled: boolean;
   createdAt: string;
+  latencyLastMs: number | null;
+  latencyMinMs: number | null;
+  latencyMaxMs: number | null;
+  latencyP90Ms: number | null;
+  latencyP95Ms: number | null;
+  latencyP99Ms: number | null;
+  latencyJitterMs: number | null;
+  latencyHistory: number[];
 }
 
 export interface DebugLogEntry {
