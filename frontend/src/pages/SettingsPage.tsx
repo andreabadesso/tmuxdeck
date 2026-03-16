@@ -27,6 +27,7 @@ export function SettingsPage() {
   const [defaultVolumes, setDefaultVolumes] = useState<string[]>([]);
   const [sshKeyPath, setSshKeyPath] = useState('');
   const [terminalPoolSize, setTerminalPoolSize] = useState(8);
+  const [snapshotEnabled, setSnapshotEnabled] = useState(true);
   const [isDirty, setIsDirty] = useState(false);
 
   // Sync local state when settings data changes
@@ -36,6 +37,7 @@ export function SettingsPage() {
     setDefaultVolumes(settings.defaultVolumeMounts);
     setSshKeyPath(settings.sshKeyPath);
     setTerminalPoolSize(settings.terminalPoolSize ?? 8);
+    setSnapshotEnabled(settings.snapshotEnabled ?? true);
     setIsDirty(false);
   }
 
@@ -45,6 +47,7 @@ export function SettingsPage() {
         defaultVolumeMounts: defaultVolumes,
         sshKeyPath,
         terminalPoolSize,
+        snapshotEnabled,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -148,6 +151,30 @@ export function SettingsPage() {
               Number of terminal instances kept alive simultaneously (1-32, default 8)
             </p>
           </div>
+        </section>
+
+        {/* Snapshot Section */}
+        <section>
+          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
+            Snapshot
+          </h2>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={snapshotEnabled}
+              onChange={(e) => {
+                setSnapshotEnabled(e.target.checked);
+                markDirty();
+              }}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+            />
+            <div>
+              <span className="text-sm text-gray-200">Enable snapshots</span>
+              <p className="text-xs text-gray-600">
+                Periodically save tmux session tree for restoring killed/lost sessions
+              </p>
+            </div>
+          </label>
         </section>
 
         {/* SSH Section */}

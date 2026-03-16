@@ -44,6 +44,7 @@ export interface TmuxWindow {
   activity: boolean;
   command?: string;
   paneStatus?: string;
+  path?: string;
 }
 
 export interface TmuxSession {
@@ -71,6 +72,7 @@ export interface Container {
 export interface ContainerListResponse {
   containers: Container[];
   dockerError?: string;
+  missingSnapshotSessions?: number;
 }
 
 export interface Template {
@@ -114,6 +116,7 @@ export interface Settings {
   audioDebugLog?: boolean;
   telegramVoiceNotifications?: boolean;
   hotkeys?: Record<string, string>;
+  snapshotEnabled?: boolean;
 }
 
 export interface ClaudeNotification {
@@ -193,3 +196,10 @@ export interface DebugLogEntry {
   message: string;
   detail?: string;
 }
+
+// Snapshot types (snake_case — raw Python dict, not Pydantic CamelModel)
+export interface SnapshotWindow { index: number; name: string; path: string; }
+export interface SnapshotSession { name: string; windows: SnapshotWindow[]; }
+export interface SnapshotContainer { id: string; display_name: string; container_type: string; status: string; sessions: SnapshotSession[]; }
+export interface Snapshot { timestamp: string | null; containers: SnapshotContainer[]; }
+export interface RestoreResult { restored: string[]; skipped: string[]; errors: string[]; }

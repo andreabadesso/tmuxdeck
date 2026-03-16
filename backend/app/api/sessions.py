@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..schemas import CreateSessionRequest, CreateWindowRequest, MoveWindowRequest, RenameSessionRequest, SwapWindowsRequest, TmuxSessionResponse, TmuxWindowResponse
 from ..services.bridge_manager import BridgeManager, is_bridge
+from .. import store
 from ..services.debug_log import DebugLog
 from ..services.tmux_manager import TmuxManager, make_session_id
 from ..store import get_session_order, save_session_order
@@ -176,4 +177,5 @@ async def kill_session(container_id: str, session_id: str):
         dl.error("session", f"Failed to kill session '{session_name}': {e}", f"container={container_id}")
         raise HTTPException(500, f"Failed to kill session: {e}") from None
     dl.info("session", f"Session killed: {session_name}", f"container={container_id}")
+    store.remove_session_from_snapshot(container_id, session_name)
     await _refresh_bridge_sessions(container_id)

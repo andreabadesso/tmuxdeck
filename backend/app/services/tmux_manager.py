@@ -121,7 +121,7 @@ class TmuxManager:
                 "-t",
                 session_name,
                 "-F",
-                "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
+                "#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}|#{pane_current_path}",
             ],
         )
         windows = []
@@ -142,6 +142,7 @@ class TmuxManager:
                     "activity": parts[5] == "1" if len(parts) > 5 else False,
                     "command": parts[6] if len(parts) > 6 else "",
                     "pane_status": parts[7] if len(parts) > 7 else "",
+                    "path": parts[8] if len(parts) > 8 else "",
                 }
             )
         return windows
@@ -158,7 +159,7 @@ class TmuxManager:
                 "list-windows",
                 "-a",
                 "-F",
-                "#{session_name}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}",
+                "#{session_name}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_bell_flag}|#{window_activity_flag}|#{pane_current_command}|#{@pane_status}|#{pane_current_path}",
             ],
         )
         windows_by_session: dict[str, list[dict]] = {}
@@ -179,6 +180,7 @@ class TmuxManager:
                 "activity": parts[6] == "1" if len(parts) > 6 else False,
                 "command": parts[7] if len(parts) > 7 else "",
                 "pane_status": parts[8] if len(parts) > 8 else "",
+                "path": parts[9] if len(parts) > 9 else "",
             }
             windows_by_session.setdefault(session_name, []).append(window)
         return windows_by_session
@@ -239,14 +241,14 @@ class TmuxManager:
             )
         return sessions
 
-    async def create_session(self, container_id: str, session_name: str) -> dict:
+    async def create_session(self, container_id: str, session_name: str, start_dir: str | None = None) -> dict:
         """Create a new tmux session in the container (or on the host)."""
         dl = DebugLog.get()
         dl.info("tmux", f"Creating session '{session_name}'", f"container={container_id}")
-        await self._run_cmd(
-            container_id,
-            ["tmux", "new-session", "-d", "-s", session_name],
-        )
+        cmd = ["tmux", "new-session", "-d", "-s", session_name]
+        if start_dir:
+            cmd += ["-c", start_dir]
+        await self._run_cmd(container_id, cmd)
         # Enable CSI u extended key sequences (e.g. Shift+Enter → \x1b[13;2u)
         # so apps like Claude Code can distinguish modified keys.
         await self._run_cmd(
@@ -293,6 +295,7 @@ class TmuxManager:
                     "index": 1, "name": "bash", "active": True,
                     "panes": 1, "bell": False, "activity": False,
                     "command": "bash", "pane_status": "",
+                    "path": start_dir or "",
                 },
             ],
             "created": datetime.now(UTC).isoformat(),
@@ -428,7 +431,7 @@ class TmuxManager:
             "tmux", "rename-window", "-t", f"{session_name}:{window_index}", new_name,
         ])
 
-    async def create_window(self, container_id: str, session_name: str, window_name: str | None = None) -> list[dict]:
+    async def create_window(self, container_id: str, session_name: str, window_name: str | None = None, start_dir: str | None = None) -> list[dict]:
         """Create a new window in a tmux session.
 
         Returns the updated list of windows after creation.
@@ -436,6 +439,8 @@ class TmuxManager:
         cmd = ["tmux", "new-window", "-t", session_name]
         if window_name:
             cmd += ["-n", window_name]
+        if start_dir:
+            cmd += ["-c", start_dir]
         await self._run_cmd(container_id, cmd)
         return await self.list_windows(container_id, session_name)
 
@@ -459,7 +464,7 @@ class TmuxManager:
                 "-t",
                 target,
                 "-F",
-                "#{pane_index}|#{pane_active}|#{pane_width}|#{pane_height}|#{pane_title}|#{pane_current_command}",
+                "#{pane_index}|#{pane_active}|#{pane_width}|#{pane_height}|#{pane_title}|#{pane_current_command}|#{pane_current_path}",
             ],
         )
         panes = []
@@ -478,6 +483,7 @@ class TmuxManager:
                     "height": int(parts[3]) if parts[3].isdigit() else 24,
                     "title": parts[4] if len(parts) > 4 else "",
                     "command": parts[5] if len(parts) > 5 else "",
+                    "path": parts[6] if len(parts) > 6 else "",
                 }
             )
         return panes

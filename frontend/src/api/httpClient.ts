@@ -16,6 +16,8 @@ import type {
   TmuxSession,
   TmuxWindow,
   WebAuthnCredential,
+  Snapshot,
+  RestoreResult,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -338,6 +340,13 @@ export const httpApi: ApiClient = {
   // Debug log
   getDebugLog: () => request<{ entries: DebugLogEntry[] }>('/debug-log'),
   clearDebugLog: () => request<void>('/debug-log', { method: 'DELETE' }),
+
+  // Snapshot
+  getSnapshot: () => request<Snapshot>('/snapshot'),
+  restoreSnapshot: (req?: { containerId?: string; sessionName?: string; dryRun?: boolean }) =>
+    request<RestoreResult>('/snapshot/restore', { method: 'POST', body: JSON.stringify(req ?? {}) }),
+  dismissSnapshotSession: (containerId: string, sessionName: string) =>
+    request<void>(`/snapshot/container/${encodeURIComponent(containerId)}/session/${encodeURIComponent(sessionName)}`, { method: 'DELETE' }),
 };
 
 export async function createContainerStream(

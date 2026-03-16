@@ -304,6 +304,8 @@ async def _cmd_kill_session(args: argparse.Namespace) -> None:
     except Exception as exc:
         print(f"Error killing session: {exc}", file=sys.stderr)
         sys.exit(1)
+    from . import store
+    store.remove_session_from_snapshot(container_id, session_name)
     print(f"Killed session: {args.session_id}")
 
 

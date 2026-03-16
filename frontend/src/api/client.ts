@@ -12,6 +12,8 @@ import type {
   TmuxWindow,
   BridgeConfig,
   RelayConfig,
+  Snapshot,
+  RestoreResult,
 } from '../types';
 
 export interface ApiClient {
@@ -71,6 +73,11 @@ export interface ApiClient {
   // Debug log
   getDebugLog(): Promise<{ entries: DebugLogEntry[] }>;
   clearDebugLog(): Promise<void>;
+
+  // Snapshot
+  getSnapshot(): Promise<Snapshot>;
+  restoreSnapshot(req?: { containerId?: string; sessionName?: string; dryRun?: boolean }): Promise<RestoreResult>;
+  dismissSnapshotSession(containerId: string, sessionName: string): Promise<void>;
 }
 
 import { mockApi } from '../mocks/mockApi';

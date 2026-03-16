@@ -8,10 +8,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   AlertTriangle,
+  Camera,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { ContainerNode } from './ContainerNode';
 import { NewContainerDialog } from './NewContainerDialog';
+import { RestoreDialog } from './RestoreDialog';
 import type { Container, SessionTarget, Selection } from '../types';
 import { getSidebarCollapsed, saveSidebarCollapsed, getSectionsCollapsed, saveSectionsCollapsed } from '../utils/sidebarState';
 
@@ -36,6 +38,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
   const [collapsed, setCollapsedRaw] = useState(() => initialCollapsed ?? getSidebarCollapsed());
   const setCollapsed = (v: boolean) => { setCollapsedRaw(v); saveSidebarCollapsed(v); };
   const [showNewContainer, setShowNewContainer] = useState(false);
+  const [showRestore, setShowRestore] = useState(false);
   const [sectionsCollapsed, setSectionsCollapsedRaw] = useState<Record<string, boolean>>(getSectionsCollapsed);
   const setSectionsCollapsed = (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
     setSectionsCollapsedRaw((prev) => { const next = updater(prev); saveSectionsCollapsed(next); return next; });
@@ -70,6 +73,14 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
     queryFn: () => api.getContainerOrder(),
     staleTime: 30_000,
   });
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+    staleTime: 60_000,
+  });
+
+  const snapshotEnabled = settings?.snapshotEnabled ?? true;
 
   const { containers = [], dockerError } = data ?? {};
 
@@ -266,6 +277,20 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             <Settings size={15} />
             Settings
           </button>
+          {snapshotEnabled && (
+            <button
+              onClick={() => setShowRestore(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+            >
+              <Camera size={15} />
+              Snapshot
+              {(data?.missingSnapshotSessions ?? 0) > 0 && (
+                <span className="ml-auto bg-orange-600 text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                  {data!.missingSnapshotSessions}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => navigate('/settings/help')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
@@ -288,6 +313,10 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             refetch();
           }}
         />
+      )}
+
+      {showRestore && (
+        <RestoreDialog onClose={() => setShowRestore(false)} />
       )}
     </>
   );

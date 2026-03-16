@@ -24,11 +24,13 @@ from .api.images import router as images_router
 from .api.notifications import router as notifications_router
 from .api.ordering import router as ordering_router
 from .api.sessions import router as sessions_router
+from .api.snapshot import router as snapshot_router
 from .api.settings import router as settings_router
 from .api.templates import router as templates_router
 from .config import config
 from .middleware import AuthMiddleware
 from .services.notification_manager import NotificationManager
+from .services.snapshot_service import SnapshotService
 from .ws.bridge import router as bridge_ws_router
 from .ws.terminal import router as ws_router
 
@@ -102,6 +104,10 @@ async def lifespan(app: FastAPI):
     # Initialize notification manager
     nm = NotificationManager.get()
 
+    # Start snapshot service
+    snapshot_svc = SnapshotService.get()
+    snapshot_svc.start()
+
     # Start Telegram bot
     telegram_bot = await _start_telegram_bot()
 
@@ -124,6 +130,7 @@ async def lifespan(app: FastAPI):
     logger.info("TmuxDeck backend shutting down")
 
     # Cleanup
+    await snapshot_svc.stop()
     await relay_manager.stop_all()
     if telegram_bot:
         await telegram_bot.stop()
@@ -152,6 +159,7 @@ app.include_router(containers_router)
 app.include_router(files_router)
 app.include_router(images_router)
 app.include_router(sessions_router)
+app.include_router(snapshot_router)
 app.include_router(templates_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)

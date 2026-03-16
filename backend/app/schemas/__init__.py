@@ -27,6 +27,7 @@ class TmuxWindowResponse(CamelModel):
     activity: bool
     command: str = ""
     pane_status: str = ""
+    path: str = ""
 
 
 class TmuxSessionResponse(CamelModel):
@@ -79,6 +80,7 @@ class ContainerResponse(CamelModel):
 class ContainerListResponse(CamelModel):
     containers: list[ContainerResponse]
     docker_error: str | None = None
+    missing_snapshot_sessions: int = 0
 
 
 class CreateContainerRequest(CamelModel):
@@ -169,6 +171,7 @@ class SettingsResponse(CamelModel):
     audio_debug_log: bool
     telegram_voice_notifications: bool
     hotkeys: dict[str, str]
+    snapshot_enabled: bool = True
 
 
 class UpdateSettingsRequest(CamelModel):
@@ -184,6 +187,7 @@ class UpdateSettingsRequest(CamelModel):
     audio_debug_log: bool | None = None
     telegram_voice_notifications: bool | None = None
     hotkeys: dict[str, str] | None = None
+    snapshot_enabled: bool | None = None
 
 
 # --- Notifications ---

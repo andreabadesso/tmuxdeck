@@ -201,6 +201,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "audioDebugLog": False,
     "telegramVoiceNotifications": False,
     "hotkeys": dict(_DEFAULT_HOTKEYS),
+    "snapshotEnabled": True,
 }
 
 
@@ -435,3 +436,45 @@ def save_session_order(container_id: str, order: list[str]) -> None:
         data["sessionOrders"] = {}
     data["sessionOrders"][container_id] = order
     _save_ordering(data)
+
+
+# --- Snapshot ----------------------------------------------------------------
+
+
+def snapshot_path() -> Path:
+    return config.data_path / "snapshot.json"
+
+
+def save_snapshot(data: dict[str, Any]) -> None:
+    _write_json(snapshot_path(), data)
+
+
+def get_snapshot() -> dict[str, Any] | None:
+    p = snapshot_path()
+    if not p.exists():
+        return None
+    try:
+        return _read_json(p)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def remove_session_from_snapshot(container_id: str, session_name: str) -> None:
+    snap = get_snapshot()
+    if not snap:
+        return
+    for container in snap.get("containers", []):
+        if container.get("id") == container_id:
+            sessions = container.get("sessions", [])
+            container["sessions"] = [s for s in sessions if s.get("name") != session_name]
+            save_snapshot(snap)
+            return
+
+
+def remove_container_from_snapshot(container_id: str) -> None:
+    snap = get_snapshot()
+    if not snap:
+        return
+    containers = snap.get("containers", [])
+    snap["containers"] = [c for c in containers if c.get("id") != container_id]
+    save_snapshot(snap)
