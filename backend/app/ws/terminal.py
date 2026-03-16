@@ -17,7 +17,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .. import auth
 from ..config import config
-from ..services.bridge_manager import BridgeManager, bridge_id_from_container, bridge_source_from_container, is_bridge
+import socket as _socket
+
+from ..services.bridge_manager import BridgeManager, TerminalInfo, bridge_id_from_container, bridge_source_from_container, is_bridge
 from ..services.docker_manager import DockerManager
 from ..services.tmux_manager import TmuxManager, _is_host, _is_local
 
@@ -677,7 +679,15 @@ async def _bridge_terminal(
             return
 
         # Register this user WS so bridge binary frames get routed here
-        conn.register_terminal(channel_id, websocket)
+        conn.register_terminal(channel_id, TerminalInfo(
+            channel_id=channel_id,
+            user_ws=websocket,
+            session_name=session_name,
+            window_index=window_index,
+            source=source,
+            cols=cols,
+            rows=rows,
+        ))
 
         # Forward user input to bridge
         try:
@@ -695,6 +705,11 @@ async def _bridge_terminal(
                             try:
                                 cols = int(parts[1])
                                 rows = int(parts[2])
+                                # Update stored dimensions for reattach
+                                info = conn.get_terminal_info(channel_id)
+                                if info:
+                                    info.cols = cols
+                                    info.rows = rows
                                 await conn.send_json({
                                     "type": "resize",
                                     "channel_id": channel_id,
@@ -885,6 +900,14 @@ async def terminal_ws(
             return
 
     await websocket.accept()
+
+    # Disable Nagle's algorithm for lower latency
+    transport = websocket.scope.get("transport")
+    if transport:
+        sock_obj = transport.get_extra_info("socket")
+        if sock_obj:
+            sock_obj.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 1)
+
     target = f"{session_name}:{window_index}"
 
     # Bridge terminals

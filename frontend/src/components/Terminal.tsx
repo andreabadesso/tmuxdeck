@@ -162,6 +162,10 @@ function connectWebSocket(
         onSessionGone?.();
         return;
       }
+      if (text === 'BRIDGE_RECONNECTING:') {
+        term.writeln('\r\n\x1b[1;33m[Bridge reconnecting...]\x1b[0m');
+        return;
+      }
       if (text.startsWith('MOUSE_WARNING:')) {
         onMouseWarning(text === 'MOUSE_WARNING:on');
         return;

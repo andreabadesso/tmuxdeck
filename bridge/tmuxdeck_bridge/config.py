@@ -22,6 +22,9 @@ class BridgeConfig:
     session_report_interval: float = 5.0
     reconnect_min: float = 5.0
     reconnect_max: float = 60.0
+    ping_interval: float = 15.0  # WebSocket ping interval (seconds)
+    ping_timeout: float = 5.0  # WebSocket ping timeout (seconds)
+    compression: str = "deflate"  # "deflate" or "none"
 
 
 def parse_config() -> BridgeConfig:
@@ -68,6 +71,18 @@ def parse_config() -> BridgeConfig:
         "--report-interval", type=float, default=5.0,
         help="Session report interval in seconds (default: 5)",
     )
+    parser.add_argument(
+        "--ping-interval", type=float, default=15.0,
+        help="WebSocket ping interval in seconds (default: 15)",
+    )
+    parser.add_argument(
+        "--ping-timeout", type=float, default=5.0,
+        help="WebSocket ping timeout in seconds (default: 5)",
+    )
+    parser.add_argument(
+        "--no-compression", action="store_true",
+        help="Disable WebSocket compression (deflate)",
+    )
 
     args = parser.parse_args()
 
@@ -89,4 +104,7 @@ def parse_config() -> BridgeConfig:
         ipv6=args.ipv6,
         host_mount_root=args.host_mount_root or os.environ.get("HOST_MOUNT_ROOT", ""),
         session_report_interval=args.report_interval,
+        ping_interval=args.ping_interval,
+        ping_timeout=args.ping_timeout,
+        compression="none" if args.no_compression else "deflate",
     )

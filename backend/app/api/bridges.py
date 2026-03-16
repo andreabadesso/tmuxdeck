@@ -60,7 +60,8 @@ async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
             await conn.close_all_terminals()
             bm.unregister(bridge_id)
             try:
-                await conn.ws.close(code=1000, reason="Bridge disabled")
+                if conn.ws:
+                    await conn.ws.close(code=1000, reason="Bridge disabled")
             except Exception:
                 pass
 
@@ -83,7 +84,8 @@ async def delete_bridge(bridge_id: str):
         await conn.close_all_terminals()
         bm.unregister(bridge_id)
         try:
-            await conn.ws.close(code=1000, reason="Bridge deleted")
+            if conn.ws:
+                await conn.ws.close(code=1000, reason="Bridge deleted")
         except Exception:
             pass
 

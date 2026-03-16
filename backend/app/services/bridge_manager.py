@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import struct
 import uuid
+from dataclasses import dataclass
 
 from fastapi import WebSocket
 
@@ -45,18 +47,33 @@ def bridge_source_from_container(container_id: str) -> str:
     return parts[2] if len(parts) >= 3 else "local"
 
 
+@dataclass
+class TerminalInfo:
+    """Metadata for a terminal relayed through a bridge."""
+
+    channel_id: int
+    user_ws: WebSocket
+    session_name: str
+    window_index: int
+    source: str
+    cols: int = 80
+    rows: int = 24
+
+
 class BridgeConnection:
     """A single connected bridge agent."""
 
     def __init__(self, bridge_id: str, name: str, ws: WebSocket) -> None:
         self.bridge_id = bridge_id
         self.name = name
-        self.ws = ws
+        self.ws: WebSocket | None = ws
+        self.connected = True
         self.sessions: list[dict] = []
         self.sources: list[str] = []
         self._pending: dict[str, asyncio.Future] = {}
-        self._terminal_relays: dict[int, WebSocket] = {}  # channel_id → user WS
+        self._terminal_relays: dict[int, TerminalInfo] = {}  # channel_id → TerminalInfo
         self._next_channel: int = 1
+        self._cleanup_task: asyncio.Task | None = None
 
     def allocate_channel(self) -> int:
         """Allocate the next available channel ID."""
@@ -66,14 +83,24 @@ class BridgeConnection:
             self._next_channel = 1
         return channel
 
-    def register_terminal(self, channel_id: int, user_ws: WebSocket) -> None:
-        self._terminal_relays[channel_id] = user_ws
+    def register_terminal(self, channel_id: int, info: TerminalInfo) -> None:
+        self._terminal_relays[channel_id] = info
 
     def unregister_terminal(self, channel_id: int) -> None:
         self._terminal_relays.pop(channel_id, None)
 
     def get_terminal_ws(self, channel_id: int) -> WebSocket | None:
+        info = self._terminal_relays.get(channel_id)
+        return info.user_ws if info else None
+
+    def get_terminal_info(self, channel_id: int) -> TerminalInfo | None:
         return self._terminal_relays.get(channel_id)
+
+    def has_terminals(self) -> bool:
+        return bool(self._terminal_relays)
+
+    def get_all_terminals(self) -> list[TerminalInfo]:
+        return list(self._terminal_relays.values())
 
     def get_session_source(self, session_name: str) -> str | None:
         """Look up the source tag for a session by name."""
@@ -83,20 +110,34 @@ class BridgeConnection:
         return None
 
     async def send_json(self, msg: dict) -> None:
-        await self.ws.send_text(json.dumps(msg))
+        """Send JSON to bridge, silently dropping if disconnected."""
+        if not self.connected or self.ws is None:
+            return
+        try:
+            await self.ws.send_text(json.dumps(msg))
+        except Exception:
+            logger.debug("send_json failed (bridge disconnected)")
 
     async def send_binary(self, channel_id: int, data: bytes) -> None:
-        header = struct.pack(">H", channel_id)
-        await self.ws.send_bytes(header + data)
+        """Send binary to bridge, silently dropping if disconnected."""
+        if not self.connected or self.ws is None:
+            return
+        try:
+            header = struct.pack(">H", channel_id)
+            await self.ws.send_bytes(header + data)
+        except Exception:
+            logger.debug("send_binary failed (bridge disconnected)")
 
     async def request(self, msg: dict, timeout: float = 10.0) -> dict:
         """Send a JSON message and await a correlated response."""
+        if not self.connected or self.ws is None:
+            raise ConnectionError("Bridge is not connected")
         req_id = str(uuid.uuid4())[:8]
         msg["id"] = req_id
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[req_id] = fut
         try:
-            await self.send_json(msg)
+            await self.ws.send_text(json.dumps(msg))
             return await asyncio.wait_for(fut, timeout=timeout)
         finally:
             self._pending.pop(req_id, None)
@@ -106,11 +147,66 @@ class BridgeConnection:
         if fut and not fut.done():
             fut.set_result(result)
 
-    async def close_all_terminals(self) -> None:
-        """Close all relayed user WebSockets when bridge disconnects."""
-        for channel_id, user_ws in list(self._terminal_relays.items()):
+    def set_disconnected(self) -> None:
+        """Mark bridge as disconnected but keep terminal registrations alive."""
+        self.connected = False
+        self.ws = None
+        # Cancel all pending request futures
+        for req_id, fut in list(self._pending.items()):
+            if not fut.done():
+                fut.set_exception(ConnectionError("Bridge disconnected"))
+        self._pending.clear()
+
+    def reconnect(self, new_ws: WebSocket) -> None:
+        """Swap in a new WebSocket after bridge reconnects."""
+        # Cancel any pending cleanup timer
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            self._cleanup_task = None
+        # Cancel all pending request futures from old connection
+        for req_id, fut in list(self._pending.items()):
+            if not fut.done():
+                fut.set_exception(ConnectionError("Bridge reconnected"))
+        self._pending.clear()
+        self.ws = new_ws
+        self.connected = True
+        logger.info("Bridge reconnected: %s (%s), %d terminals to reattach",
+                     self.bridge_id, self.name, len(self._terminal_relays))
+
+    async def reattach_all(self) -> None:
+        """Re-attach all active terminals after bridge reconnection."""
+        for channel_id, info in list(self._terminal_relays.items()):
             try:
-                await user_ws.close(code=1001, reason="Bridge disconnected")
+                result = await self.request({
+                    "type": "attach",
+                    "session_name": info.session_name,
+                    "window_index": info.window_index,
+                    "channel_id": channel_id,
+                    "cols": info.cols,
+                    "rows": info.rows,
+                    "source": info.source,
+                })
+                if result.get("type") == "attach_error":
+                    logger.warning("Reattach failed for ch %d (%s): %s",
+                                   channel_id, info.session_name,
+                                   result.get("reason", "unknown"))
+                    # Session is gone — close only this user WS
+                    with contextlib.suppress(Exception):
+                        await info.user_ws.send_text("SESSION_GONE:")
+                    with contextlib.suppress(Exception):
+                        await info.user_ws.close(code=4404, reason="Session gone")
+                    self._terminal_relays.pop(channel_id, None)
+                else:
+                    logger.info("Reattached ch %d to %s", channel_id, info.session_name)
+            except Exception as e:
+                logger.warning("Reattach exception for ch %d: %s", channel_id, e)
+                # Don't remove terminal — bridge may have reconnected again
+
+    async def close_all_terminals(self) -> None:
+        """Close all relayed user WebSockets when bridge disconnects permanently."""
+        for channel_id, info in list(self._terminal_relays.items()):
+            try:
+                await info.user_ws.close(code=1001, reason="Bridge disconnected")
             except Exception:
                 pass
         self._terminal_relays.clear()

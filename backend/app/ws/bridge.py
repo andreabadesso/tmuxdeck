@@ -7,27 +7,62 @@ One persistent WebSocket per bridge carries:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
+import socket
 import struct
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .. import store
-from ..services.bridge_manager import BridgeManager
+from ..services.bridge_manager import BridgeConnection, BridgeManager
 from ..services.debug_log import DebugLog
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# How long to wait for bridge to reconnect before cleaning up terminals
+BRIDGE_RECONNECT_TIMEOUT = 120  # seconds
+
+
+def _set_tcp_nodelay(websocket: WebSocket) -> None:
+    """Set TCP_NODELAY on the underlying socket to disable Nagle's algorithm."""
+    transport = websocket.scope.get("transport")
+    if transport:
+        sock = transport.get_extra_info("socket")
+        if sock:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
+async def _bridge_cleanup_timer(
+    bm: BridgeManager,
+    bridge_id: str,
+    timeout: float = BRIDGE_RECONNECT_TIMEOUT,
+) -> None:
+    """Wait for bridge to reconnect; if it doesn't, close all terminals."""
+    try:
+        await asyncio.sleep(timeout)
+    except asyncio.CancelledError:
+        # Bridge reconnected — timer cancelled
+        return
+    conn = bm.get_bridge(bridge_id)
+    if conn and not conn.connected:
+        logger.info("Bridge %s did not reconnect within %ds, cleaning up", bridge_id, timeout)
+        await conn.close_all_terminals()
+        bm.unregister(bridge_id)
+
 
 @router.websocket("/ws/bridge")
 async def bridge_ws(websocket: WebSocket):
     await websocket.accept()
+    _set_tcp_nodelay(websocket)
 
     bridge_id: str | None = None
-    conn = None
+    conn: BridgeConnection | None = None
     bm = BridgeManager.get()
+    needs_reattach = False
 
     try:
         # Step 1: Wait for auth message
@@ -70,18 +105,28 @@ async def bridge_ws(websocket: WebSocket):
 
         bridge_id = bridge_config["id"]
 
-        # Disconnect existing connection for this bridge if any
+        # Seamless reconnect: reuse existing connection if it has active terminals
         existing = bm.get_bridge(bridge_id)
-        if existing:
-            logger.info("Replacing existing bridge connection: %s", bridge_id)
-            await existing.close_all_terminals()
-            bm.unregister(bridge_id)
+        if existing and existing.has_terminals():
+            conn = existing
+            conn.reconnect(websocket)
+            needs_reattach = True
+            DebugLog.get().info("bridge", f"Bridge reconnected: {name}", f"id={bridge_id}")
+        else:
+            if existing:
+                await existing.close_all_terminals()
+                bm.unregister(bridge_id)
+            conn = bm.register(bridge_id, name, websocket)
 
-        conn = bm.register(bridge_id, name, websocket)
         await websocket.send_text(json.dumps({
             "type": "auth_ok", "bridge_id": bridge_id,
         }))
-        logger.info("Bridge authenticated: %s (%s)", bridge_id, name)
+        logger.info("Bridge authenticated: %s (%s)%s", bridge_id, name,
+                     " (reattaching)" if needs_reattach else "")
+
+        # Reattach terminals from previous connection
+        if needs_reattach:
+            asyncio.create_task(conn.reattach_all())
 
         # Step 2: Main message loop
         while True:
@@ -164,10 +209,22 @@ async def bridge_ws(websocket: WebSocket):
         logger.error("Bridge WebSocket error: %s", e)
         DebugLog.get().error("bridge", f"WebSocket error: {e}", f"bridge_id={bridge_id}")
     finally:
-        if conn:
-            await conn.close_all_terminals()
-        if bridge_id:
-            bm.unregister(bridge_id)
+        if conn and conn.has_terminals():
+            # Bridge disconnected but terminals are active — keep conn alive
+            conn.set_disconnected()
+            # Notify user terminals of temporary disruption
+            for info in conn.get_all_terminals():
+                with contextlib.suppress(Exception):
+                    await info.user_ws.send_text("BRIDGE_RECONNECTING:")
+            # Cleanup timer: if bridge doesn't reconnect in time, close everything
+            conn._cleanup_task = asyncio.create_task(
+                _bridge_cleanup_timer(bm, bridge_id, timeout=BRIDGE_RECONNECT_TIMEOUT)
+            )
+        else:
+            if conn:
+                await conn.close_all_terminals()
+            if bridge_id:
+                bm.unregister(bridge_id)
         try:
             await websocket.close()
         except Exception:

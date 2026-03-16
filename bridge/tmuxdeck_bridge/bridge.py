@@ -182,11 +182,16 @@ class Bridge:
                 async with websockets.connect(
                     self.config.url,
                     max_size=32 * 1024 * 1024,
-                    ping_interval=30,
-                    ping_timeout=10,
-                    compression="deflate",
+                    ping_interval=self.config.ping_interval,
+                    ping_timeout=self.config.ping_timeout,
+                    compression=self.config.compression if self.config.compression != "none" else None,
                     family=socket.AF_INET6 if self.config.ipv6 else socket.AF_INET,
                 ) as ws:
+                    # Disable Nagle's algorithm for lower latency
+                    sock = ws.transport.get_extra_info("socket")
+                    if sock:
+                        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
                     self._ws = ws
                     delay = self.config.reconnect_min  # reset on success
 
