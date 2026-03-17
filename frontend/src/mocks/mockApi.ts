@@ -270,4 +270,7 @@ export const mockApi: ApiClient = {
   async saveSessionOrder(_containerId: string, _order: string[]) {},
   async getDebugLog() { return { entries: [] }; },
   async clearDebugLog() {},
+  async getSnapshot() { return { timestamp: null, containers: [] }; },
+  async restoreSnapshot() { return { restored: [], skipped: [], errors: [] }; },
+  async dismissSnapshotSession() {},
 };
