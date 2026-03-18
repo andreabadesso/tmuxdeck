@@ -10,7 +10,7 @@ services:
       # Host filesystem mounts for tmuxdeck-open file access.
       # Mount host directories under /mnt/host so the bridge can read/write them.
       # - /opt/production:/mnt/host/opt/production:ro
-      # - /tmp:/mnt/host/tmp
+      - /tmp:/mnt/host/tmp
     environment:
       - HOST_UID=${HOST_UID:-1000}
       - HOST_TMUX_SOCKET=/tmp/tmux-host/default
@@ -18,7 +18,7 @@ services:
       # Optional: filter containers by label (e.g. DOCKER_LABEL=tmuxdeck=true)
       # - DOCKER_LABEL=
       # Set when using host filesystem mounts above:
-      # - HOST_MOUNT_ROOT=/mnt/host
+      - HOST_MOUNT_ROOT=/mnt/host
     env_file:
       - .env
     restart: unless-stopped

@@ -93,6 +93,14 @@ class Bridge:
             sources.append(f"docker ({self.config.docker_socket})")
         logger.info("Configured sources: %s", ", ".join(sources) if sources else "NONE")
 
+        # Warn if host tmux socket is set but HOST_MOUNT_ROOT is missing
+        if self.config.host_tmux_socket and not self.config.host_mount_root:
+            logger.warning(
+                "host_tmux_socket is set but HOST_MOUNT_ROOT is not configured. "
+                "File operations for host terminals will write inside the container "
+                "instead of on the host."
+            )
+
         # Check host_mount_root
         if self.config.host_mount_root:
             mount_root = Path(self.config.host_mount_root)
