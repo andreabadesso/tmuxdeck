@@ -210,7 +210,7 @@ function setupWebSocketTerminal(
   fitAddon: FitAddon,
   containerId: string,
   sessionName: string,
-  windowIndex: number,
+  _windowIndex: number,
   onMouseWarning: (enabled: boolean) => void,
   onBellWarning: (warning: BellWarning | null) => void,
   wsRef: { current: WebSocket | null },
