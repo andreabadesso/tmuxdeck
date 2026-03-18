@@ -220,7 +220,6 @@ function setupWebSocketTerminal(
   onSessionGone?: () => void,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndex}`;
 
   let reconnectAttempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -411,6 +410,7 @@ function setupWebSocketTerminal(
     }
     wsRef.current = null;
 
+    const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${containerId}/${sessionName}/${windowIndexRef.current}`;
     let connectTime = 0;
     let receivedData = false;
     const { close } = connectWebSocket(
