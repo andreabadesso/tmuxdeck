@@ -20,6 +20,8 @@ services:
       - "${BIND_HOST:-127.0.0.1}:3000:80"
     depends_on:
       - backend
+    environment:
+      - BACKEND_URL=${BACKEND_URL:-backend:8000}
     restart: unless-stopped
 
 volumes:

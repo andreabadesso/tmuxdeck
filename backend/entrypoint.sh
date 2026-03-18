@@ -9,4 +9,4 @@ if [ -n "$HOST_TMUX_SOCKET" ]; then
         chmod 700 "$tmux_dir" 2>/dev/null || true
     fi
 fi
-exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --ws-per-message-deflate "$@"
+exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --ws-per-message-deflate true "$@"
