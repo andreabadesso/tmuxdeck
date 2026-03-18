@@ -254,6 +254,17 @@ export function MainPage() {
     };
   }, []);
 
+  // Clear preview when switching browser tabs to prevent stale preview on return
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        clearPreviewImmediate();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [clearPreviewImmediate]);
+
   // Browser notifications for bell flags
   useEffect(() => {
     const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
