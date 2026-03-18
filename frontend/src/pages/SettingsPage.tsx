@@ -472,7 +472,7 @@ function ChangePinScreen({ onClose }: { onClose: () => void }) {
         : 'Re-enter your new PIN to confirm';
 
   return (
-    <div className="fixed inset-0 bg-[#0a0a0a] flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-[#0a0a0a] flex items-center justify-center z-50" onClick={() => inputRef.current?.focus()}>
       <form ref={formRef} onSubmit={handleSubmit} className="w-full max-w-xs space-y-6 px-4">
         <div className="text-center space-y-2">
           <h1 className="text-xl font-semibold text-gray-100">{title}</h1>
