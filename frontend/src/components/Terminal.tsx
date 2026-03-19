@@ -216,7 +216,7 @@ function setupWebSocketTerminal(
   onBellWarning: (warning: BellWarning | null) => void,
   wsRef: { current: WebSocket | null },
   windowIndexRef: { current: number },
-  osc52TextRef: { current: string | null },
+  _osc52TextRef: { current: string | null },
   onFirstData?: () => void,
   onSessionGone?: () => void,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
