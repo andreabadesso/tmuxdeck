@@ -14,6 +14,7 @@ import {
 import { startRegistration } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/types';
 import { SettingsTabs } from '../components/SettingsTabs';
+import { getNaturalTouchScroll, saveNaturalTouchScroll } from '../utils/sidebarState';
 import type { WebAuthnCredential } from '../types';
 
 export function SettingsPage() {
@@ -28,6 +29,7 @@ export function SettingsPage() {
   const [sshKeyPath, setSshKeyPath] = useState('');
   const [terminalPoolSize, setTerminalPoolSize] = useState(8);
   const [snapshotEnabled, setSnapshotEnabled] = useState(true);
+  const [naturalTouchScroll, setNaturalTouchScroll] = useState(() => getNaturalTouchScroll());
   const [isDirty, setIsDirty] = useState(false);
 
   // Sync local state when settings data changes
@@ -151,6 +153,23 @@ export function SettingsPage() {
               Number of terminal instances kept alive simultaneously (1-32, default 8)
             </p>
           </div>
+          <label className="flex items-center gap-3 cursor-pointer mt-4">
+            <input
+              type="checkbox"
+              checked={naturalTouchScroll}
+              onChange={(e) => {
+                setNaturalTouchScroll(e.target.checked);
+                saveNaturalTouchScroll(e.target.checked);
+              }}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+            />
+            <div>
+              <span className="text-sm text-gray-200">Natural Touch Scrolling</span>
+              <p className="text-xs text-gray-600">
+                Invert touch scroll direction (matches iOS/Android default)
+              </p>
+            </div>
+          </label>
         </section>
 
         {/* Snapshot Section */}

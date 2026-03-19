@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
 import { useToast } from './ToastContainer';
+import { getNaturalTouchScroll } from '../utils/sidebarState';
 import '@xterm/xterm/css/xterm.css';
 
 const IS_TOUCH_DEVICE = typeof window !== 'undefined' &&
@@ -968,11 +969,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+      const natural = getNaturalTouchScroll();
       const lines = Math.max(1, Math.round(Math.abs(deltaY) / PX_PER_LINE));
-      if (deltaY > 0) {
+      const scrollUp = natural ? deltaY < 0 : deltaY > 0;
+      if (scrollUp) {
         inScrollModeRef.current.current = true;
         ws.send(`SCROLL:up:${lines}:line`);
-      } else if (deltaY < 0) {
+      } else {
         ws.send(`SCROLL:down:${lines}:line`);
       }
     };
@@ -988,13 +991,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (Math.abs(touchVelocity) < 0.3) return;
 
+      const natural = getNaturalTouchScroll();
       let velocity = touchVelocity;
       const decay = () => {
         velocity *= 0.85;
         if (Math.abs(velocity) < 0.1) return;
 
         const lines = Math.max(1, Math.round(Math.abs(velocity * TOUCH_THROTTLE_MS) / PX_PER_LINE));
-        if (velocity > 0) {
+        const scrollUp = natural ? velocity < 0 : velocity > 0;
+        if (scrollUp) {
           inScrollModeRef.current.current = true;
           ws.send(`SCROLL:up:${lines}:line`);
         } else {

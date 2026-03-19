@@ -64,3 +64,16 @@ export function saveSessionExpanded(containerId: string, sessionId: string, expa
     localStorage.setItem(SESSION_EXPANDED_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
 }
+
+const NATURAL_TOUCH_SCROLL_KEY = 'naturalTouchScroll';
+
+export function getNaturalTouchScroll(): boolean {
+  try {
+    const val = localStorage.getItem(NATURAL_TOUCH_SCROLL_KEY);
+    return val === null ? true : val === 'true';
+  } catch { return true; }
+}
+
+export function saveNaturalTouchScroll(value: boolean) {
+  try { localStorage.setItem(NATURAL_TOUCH_SCROLL_KEY, String(value)); } catch { /* ignore */ }
+}
