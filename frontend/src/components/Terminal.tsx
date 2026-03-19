@@ -321,17 +321,11 @@ function setupWebSocketTerminal(
     if (e.key === 'v' || e.key === 'V') {
       const shouldPaste = isMac ? (e.metaKey && !e.shiftKey) : (e.ctrlKey && e.shiftKey);
       if (shouldPaste) {
-        // On iOS/iPadOS, clipboard.readText() is restricted by Safari.
-        // Let the native paste event flow to handlePaste instead.
-        if (isIOS) return true;
-        navigator.clipboard.readText().then((text) => {
-          if (text) term.paste(text);
-          else if (osc52TextRef.current) term.paste(osc52TextRef.current);
-        }).catch(() => {
-          // Clipboard permission denied — use stored OSC 52 text if available
-          if (osc52TextRef.current) term.paste(osc52TextRef.current);
-        });
-        return false;
+        // Let the native paste event flow to handlePaste capture listener.
+        // This avoids navigator.clipboard.readText() which triggers a permission
+        // popup in Firefox and caused double-paste (both this handler and
+        // handlePaste were calling term.paste()).
+        return true;
       }
     }
 
@@ -829,13 +823,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         uploadAndInject(imageFile, containerId, wsRef.current, term);
         return;
       }
-      // Handle plain text paste (iPad long-press → Paste popup)
+      // Handle plain text paste (keyboard shortcut or iPad long-press → Paste popup)
       if (hasText) {
         const text = e.clipboardData?.getData('text/plain');
         if (text) {
           e.preventDefault();
           e.stopPropagation();
           term.paste(text);
+        } else if (osc52TextRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          term.paste(osc52TextRef.current);
         }
       }
     };
