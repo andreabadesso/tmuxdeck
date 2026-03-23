@@ -44,13 +44,13 @@ function autoTuneExplanation(
 
   switch (setting) {
     case 'compression':
-      return p90 > 100
-        ? `Enabled: P90 latency (${Math.round(p90)}ms) > 100ms suggests a slow link`
-        : `Disabled: P90 latency (${Math.round(p90)}ms) \u2264 100ms, saving CPU`;
+      return p90 > 150
+        ? `Enabled: P90 latency (${Math.round(p90)}ms) > 150ms suggests a slow link`
+        : `Disabled: P90 latency (${Math.round(p90)}ms) \u2264 150ms, saving CPU`;
     case 'coalesceMs':
-      if (p90 < 20) return `0ms: very low P90 (${Math.round(p90)}ms), no buffering needed`;
-      if (p90 <= 80) return `Low coalesce: moderate P90 (${Math.round(p90)}ms)`;
-      if (jitter > 30) return `Higher coalesce: jitter (${Math.round(jitter)}ms) > 30ms adds extra buffer`;
+      if (p90 < 40) return `0ms: low P90 (${Math.round(p90)}ms), no buffering needed`;
+      if (p90 <= 100) return `Low coalesce: moderate P90 (${Math.round(p90)}ms)`;
+      if (jitter > 50) return `Higher coalesce: jitter (${Math.round(jitter)}ms) > 50ms adds extra buffer`;
       return `Scaled with P90 (${Math.round(p90)}ms) to reduce frame overhead`;
     case 'pingIntervalSec':
       if (jitter > 50) return `Fast pings: high jitter (${Math.round(jitter)}ms) needs close monitoring`;
@@ -107,6 +107,14 @@ export function BridgeSettingsPage() {
   const autoTuneMutation = useMutation({
     mutationFn: ({ id, autoTune }: { id: string; autoTune: boolean }) =>
       api.updateBridge(id, { autoTune }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bridges'] });
+    },
+  });
+
+  const lanModeMutation = useMutation({
+    mutationFn: ({ id, lanMode }: { id: string; lanMode: boolean }) =>
+      api.updateBridge(id, { lanMode }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bridges'] });
     },
@@ -258,6 +266,7 @@ export function BridgeSettingsPage() {
                       }`}>
                         {!bridge.enabled ? 'Disabled' : bridge.connected ? 'Online' : 'Offline'}
                       </span>
+                      {bridge.lanMode && <span className="text-xs text-green-400 bg-green-900/30 px-1.5 rounded font-medium">LAN</span>}
                       <span className="text-xs text-gray-600">
                         {new Date(bridge.createdAt).toLocaleDateString()}
                       </span>
@@ -291,48 +300,73 @@ export function BridgeSettingsPage() {
                   {isExpanded && (
                     <div className="border-t border-gray-700 px-4 py-3 space-y-3">
                       <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wide">Settings</h3>
+                      {/* LAN mode toggle */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm text-gray-300">LAN mode</span>
+                          <InfoTooltip text="Optimizes for low-latency local networks: disables compression, sets zero coalescing, and disables auto-tune. Use when the bridge is on the same LAN." />
+                        </div>
+                        <button
+                          onClick={() => lanModeMutation.mutate({ id: bridge.id, lanMode: !bridge.lanMode })}
+                          disabled={lanModeMutation.isPending}
+                          className={`p-1 transition-colors ${
+                            bridge.lanMode ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
+                          }`}
+                        >
+                          {bridge.lanMode ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                        </button>
+                      </div>
+                      {bridge.lanMode && (
+                        <p className="text-xs text-green-400/70 italic -mt-1 pl-1">Compression off, zero coalescing, auto-tune disabled</p>
+                      )}
                       {/* Auto-tune toggle */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <span className="text-sm text-gray-300">Auto-tune</span>
+                          <span className={`text-sm ${bridge.lanMode ? 'text-gray-500' : 'text-gray-300'}`}>Auto-tune</span>
                           <InfoTooltip text="Automatically adjusts settings based on measured latency and jitter. Requires at least 5 latency samples." />
+                          {bridge.lanMode && <span className="ml-2 text-xs text-gray-600">disabled by LAN mode</span>}
                         </div>
                         <button
                           onClick={() => autoTuneMutation.mutate({ id: bridge.id, autoTune: !bridge.autoTune })}
-                          disabled={autoTuneMutation.isPending}
+                          disabled={autoTuneMutation.isPending || bridge.lanMode}
                           className={`p-1 transition-colors ${
-                            bridge.autoTune ? 'text-blue-400 hover:text-blue-300' : 'text-gray-600 hover:text-gray-400'
+                            bridge.lanMode
+                              ? 'text-gray-600 cursor-not-allowed'
+                              : bridge.autoTune ? 'text-blue-400 hover:text-blue-300' : 'text-gray-600 hover:text-gray-400'
                           }`}
                         >
-                          {bridge.autoTune ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          {bridge.autoTune && !bridge.lanMode ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         {/* Compression toggle */}
+                        {(() => { const locked = !!(bridge.lanMode || bridge.autoTune); return (
                         <div className="flex items-center justify-between col-span-2">
                           <div>
-                            <span className={`text-sm ${bridge.autoTune ? 'text-gray-400' : 'text-gray-300'}`}>Compression</span>
+                            <span className={`text-sm ${locked ? 'text-gray-400' : 'text-gray-300'}`}>Compression</span>
                             <InfoTooltip text="Compresses WebSocket frames. Reduces bandwidth at the cost of CPU. Best for high-latency or bandwidth-constrained links." />
-                            {bridge.autoTune && <span className="ml-2 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
+                            {bridge.lanMode && <span className="ml-2 text-green-400 bg-green-900/30 px-1 rounded text-xs">LAN</span>}
+                            {!bridge.lanMode && bridge.autoTune && <span className="ml-2 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
                             {neg && <span className="ml-2 text-xs text-gray-500">active: {neg.compression ? 'on' : 'off'}</span>}
                           </div>
                           <button
                             onClick={() => settingsMutation.mutate({
                               id: bridge.id,
-                              settings: { compression: !(s.compression ?? true) },
+                              settings: { compression: !(s.compression ?? false) },
                             })}
-                            disabled={settingsMutation.isPending || bridge.autoTune}
+                            disabled={settingsMutation.isPending || locked}
                             className={`p-1 transition-colors ${
-                              bridge.autoTune
-                                ? (neg?.compression ?? s.compression ?? true) ? 'text-green-400/50 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed'
-                                : (s.compression ?? true) ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
+                              locked
+                                ? (neg?.compression ?? s.compression ?? false) ? 'text-green-400/50 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed'
+                                : (s.compression ?? false) ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'
                             }`}
                           >
-                            {(bridge.autoTune ? (neg?.compression ?? s.compression ?? true) : (s.compression ?? true))
+                            {(locked ? (neg?.compression ?? s.compression ?? false) : (s.compression ?? false))
                               ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                           </button>
                         </div>
-                        {bridge.autoTune && autoTuneExplanation('compression', bridge) && (
+                        ); })()}
+                        {bridge.autoTune && !bridge.lanMode && autoTuneExplanation('compression', bridge) && (
                           <p className="col-span-2 -mt-2 text-xs text-blue-400/70 italic pl-1">{autoTuneExplanation('compression', bridge)}</p>
                         )}
                         {/* Report interval */}
@@ -398,36 +432,39 @@ export function BridgeSettingsPage() {
                           )}
                         </div>
                         {/* Coalesce ms */}
+                        {(() => { const locked = !!(bridge.lanMode || bridge.autoTune); return (
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
                             I/O coalesce (ms)
                             <InfoTooltip text="Buffers terminal output before sending to reduce frame overhead. Higher = fewer frames but more output latency." />
-                            {bridge.autoTune && <span className="ml-1 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
-                            {!bridge.autoTune && neg && <span className="ml-1 text-gray-600">active: {neg.coalesceMs}</span>}
+                            {bridge.lanMode && <span className="ml-1 text-green-400 bg-green-900/30 px-1 rounded text-xs">LAN</span>}
+                            {!bridge.lanMode && bridge.autoTune && <span className="ml-1 text-blue-400 bg-blue-900/30 px-1 rounded text-xs">auto</span>}
+                            {!locked && neg && <span className="ml-1 text-gray-600">active: {neg.coalesceMs}</span>}
                           </label>
                           <input
                             type="number"
                             min={0}
                             max={50}
                             step={1}
-                            {...(bridge.autoTune
-                              ? { value: neg?.coalesceMs ?? s.coalesceMs ?? 2, readOnly: true }
-                              : { defaultValue: s.coalesceMs ?? 2, key: `coalesce-${bridge.id}-manual` }
+                            {...(locked
+                              ? { value: bridge.lanMode ? 0 : (neg?.coalesceMs ?? s.coalesceMs ?? 0), readOnly: true }
+                              : { defaultValue: s.coalesceMs ?? 0, key: `coalesce-${bridge.id}-manual` }
                             )}
                             onBlur={(e) => {
-                              if (bridge.autoTune) return;
+                              if (locked) return;
                               const v = parseInt(e.target.value, 10);
                               if (!isNaN(v) && v >= 0 && v <= 50) {
                                 settingsMutation.mutate({ id: bridge.id, settings: { coalesceMs: v } });
                               }
                             }}
-                            disabled={bridge.autoTune}
-                            className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${bridge.autoTune ? 'text-blue-300/70 cursor-not-allowed' : 'text-gray-200 focus:border-blue-500'}`}
+                            disabled={locked}
+                            className={`w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${locked ? (bridge.lanMode ? 'text-green-300/70 cursor-not-allowed' : 'text-blue-300/70 cursor-not-allowed') : 'text-gray-200 focus:border-blue-500'}`}
                           />
-                          {bridge.autoTune && autoTuneExplanation('coalesceMs', bridge) && (
+                          {bridge.autoTune && !bridge.lanMode && autoTuneExplanation('coalesceMs', bridge) && (
                             <p className="mt-1 text-xs text-blue-400/70 italic">{autoTuneExplanation('coalesceMs', bridge)}</p>
                           )}
                         </div>
+                        ); })()}
                       </div>
                       {settingsMutation.isError && (
                         <p className="text-xs text-red-400">{settingsMutation.error.message}</p>

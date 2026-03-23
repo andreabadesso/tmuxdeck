@@ -61,11 +61,20 @@ async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
     # Serialize settings sub-model to dict
     if req.settings is not None:
         updates["settings"] = req.settings.model_dump(exclude_none=True)
-    # Map auto_tune → autoTune for store
+    # Map auto_tune → autoTune, lan_mode → lanMode for store
     if "auto_tune" in updates:
         updates["autoTune"] = updates.pop("auto_tune")
+    if "lan_mode" in updates:
+        updates["lanMode"] = updates.pop("lan_mode")
     if not updates:
         raise HTTPException(400, "No fields to update")
+
+    # LAN mode: force autoTune off and override latency-sensitive settings
+    if updates.get("lanMode"):
+        updates["autoTune"] = False
+        lan_settings = {"coalesce_ms": 0, "compression": False}
+        updates.setdefault("settings", {})
+        updates["settings"].update(lan_settings)
 
     cfg = store.update_bridge_config(bridge_id, updates)
     if not cfg:
@@ -85,8 +94,8 @@ async def update_bridge(bridge_id: str, req: UpdateBridgeRequest):
             except Exception:
                 pass
 
-    # If settings were updated, push to connected bridge
-    if req.settings is not None:
+    # If settings were updated (explicitly or via LAN mode), push to connected bridge
+    if req.settings is not None or req.lan_mode is True:
         conn = bm.get_bridge(bridge_id)
         if conn and conn.connected:
             await conn.push_settings(cfg.get("settings", {}))

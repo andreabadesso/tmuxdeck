@@ -56,9 +56,12 @@ async def _ping_loop(conn: BridgeConnection, interval: float = PING_INTERVAL) ->
 
 
 async def _forward_bytes(conn: BridgeConnection, channel_id: int, user_ws: WebSocket, data: bytes) -> None:
-    """Forward binary data to user WebSocket without blocking the bridge receive loop."""
+    """Forward binary data to user WebSocket, with timeout to avoid blocking indefinitely."""
     try:
-        await user_ws.send_bytes(data)
+        await asyncio.wait_for(user_ws.send_bytes(data), timeout=5.0)
+    except asyncio.TimeoutError:
+        logger.warning("Forward timeout on ch %d — dropping slow client", channel_id)
+        conn.unregister_terminal(channel_id)
     except Exception:
         conn.unregister_terminal(channel_id)
 
@@ -191,7 +194,7 @@ async def bridge_ws(websocket: WebSocket):
                 user_ws = conn.get_terminal_ws(channel_id)
                 if user_ws:
                     _fwd_tasks += 1
-                    asyncio.create_task(_forward_bytes(conn, channel_id, user_ws, payload))
+                    await _forward_bytes(conn, channel_id, user_ws, payload)
 
             # Text frame: JSON control message
             elif "text" in message and message["text"]:

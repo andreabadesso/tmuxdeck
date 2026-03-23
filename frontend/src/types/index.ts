@@ -194,6 +194,7 @@ export interface BridgeConfig {
   connected: boolean;
   enabled: boolean;
   autoTune?: boolean;
+  lanMode?: boolean;
   createdAt: string;
   latencyLastMs: number | null;
   latencyMinMs: number | null;

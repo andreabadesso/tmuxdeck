@@ -292,7 +292,7 @@ class Bridge:
                     "compression": True,
                     "report_interval_sec": {"min": 1.0, "max": 60.0, "default": self.config.session_report_interval},
                     "ping_interval_sec": {"min": 2.0, "max": 120.0, "default": self.config.ping_interval},
-                    "coalesce_ms": {"min": 0, "max": 50, "default": 2},
+                    "coalesce_ms": {"min": 0, "max": 50, "default": 0},
                 },
             }))
             return True

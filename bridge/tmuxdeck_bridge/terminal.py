@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _READ_BUF = 65536  # Large buffer to reduce frame count over double-hop WS relay
-_COALESCE_MS = 0.002  # 2ms coalescing window — imperceptible but batches burst writes
+_COALESCE_MS = 0.0  # Start with zero coalescing; auto-tune raises for high-latency links
 _BACKPRESSURE_CAP = 262144  # 256KB max per coalesced batch
 
 
@@ -108,8 +108,8 @@ class TerminalSession:
                 if not chunks:
                     continue
 
-                # Coalescing window: wait up to 2ms for more data
-                if total < _BACKPRESSURE_CAP:
+                # Coalescing window: wait for more data (skipped when zero)
+                if total < _BACKPRESSURE_CAP and _COALESCE_MS > 0:
                     try:
                         ready.clear()
                         await asyncio.wait_for(ready.wait(), timeout=_COALESCE_MS)

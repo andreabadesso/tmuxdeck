@@ -88,6 +88,9 @@ class BridgeConnection:
         # Capability negotiation
         self.capabilities: dict | None = None
         self.negotiated_settings: dict | None = None
+        # Auto-tune hysteresis
+        self._last_auto_tune_at: float = 0.0
+        self._auto_tune_cooldown: float = 60.0  # seconds between setting changes
 
     def allocate_channel(self) -> int:
         """Allocate the next available channel ID."""
@@ -238,10 +241,10 @@ class BridgeConnection:
 
         # Defaults when no stored setting exists
         defaults = {
-            "compression": True,
+            "compression": False,
             "report_interval_sec": 5.0,
             "ping_interval_sec": 10.0,
-            "coalesce_ms": 2,
+            "coalesce_ms": 0,
         }
 
         for key, default_val in defaults.items():
@@ -342,19 +345,23 @@ class BridgeConnection:
 
 
 def compute_auto_settings(p90_ms: float, jitter_ms: float) -> dict:
-    """Compute optimal settings based on measured latency and jitter."""
-    # Coalesce
-    if p90_ms < 20:
+    """Compute optimal settings based on measured latency and jitter.
+
+    Tuned to keep coalescing at zero for LAN bridges (P90 < 40ms) and
+    to avoid enabling compression unless latency is genuinely high.
+    """
+    # Coalesce — zero for LAN, ramp gently for WAN
+    if p90_ms < 40:
         coalesce_ms = 0
-    elif p90_ms <= 80:
+    elif p90_ms <= 100:
         coalesce_ms = 2
     elif p90_ms <= 200:
-        scale = int((p90_ms - 80) / 120 * 10)
-        coalesce_ms = 5 + scale
+        scale = int((p90_ms - 100) / 100 * 8)
+        coalesce_ms = 4 + scale
     else:
-        coalesce_ms = min(25, 15 + int((p90_ms - 200) / 100 * 10))
-    if jitter_ms > 30:
-        coalesce_ms += 5
+        coalesce_ms = min(20, 12 + int((p90_ms - 200) / 100 * 8))
+    if jitter_ms > 50:
+        coalesce_ms += 3
 
     # Ping interval
     if jitter_ms > 50:
@@ -366,8 +373,8 @@ def compute_auto_settings(p90_ms: float, jitter_ms: float) -> dict:
     if p90_ms > 200:
         ping_interval_sec = min(ping_interval_sec, 10)
 
-    # Compression
-    compression = p90_ms > 100
+    # Compression — only for genuinely slow links, not brief spikes
+    compression = p90_ms > 150
 
     # Report interval
     report_interval_sec = 3 if jitter_ms > 50 else 5
@@ -381,14 +388,17 @@ def compute_auto_settings(p90_ms: float, jitter_ms: float) -> dict:
 
 
 def _settings_changed(old: dict, new: dict) -> bool:
-    """Check if auto-tune settings differ meaningfully from current."""
+    """Check if auto-tune settings differ meaningfully from current.
+
+    Uses wide thresholds to prevent oscillation / flapping.
+    """
     if old.get("compression") != new.get("compression"):
         return True
-    if abs(old.get("coalesce_ms", 0) - new.get("coalesce_ms", 0)) > 2:
+    if abs(old.get("coalesce_ms", 0) - new.get("coalesce_ms", 0)) > 5:
         return True
-    if abs(old.get("ping_interval_sec", 0) - new.get("ping_interval_sec", 0)) > 1:
+    if abs(old.get("ping_interval_sec", 0) - new.get("ping_interval_sec", 0)) > 3:
         return True
-    if abs(old.get("report_interval_sec", 0) - new.get("report_interval_sec", 0)) > 1:
+    if abs(old.get("report_interval_sec", 0) - new.get("report_interval_sec", 0)) > 2:
         return True
     return False
 
@@ -436,11 +446,14 @@ class BridgeManager:
         return list(self.bridges.values())
 
     async def check_auto_tune(self, bridge_id: str) -> None:
-        """If auto-tune is enabled, recompute and push settings if changed."""
+        """If auto-tune is enabled, recompute and push settings if changed.
+
+        Applies a cooldown period between changes to prevent oscillation.
+        """
         from .. import store
 
         bridge_cfg = store.get_bridge_config(bridge_id)
-        if not bridge_cfg or not bridge_cfg.get("autoTune"):
+        if not bridge_cfg or not bridge_cfg.get("autoTune") or bridge_cfg.get("lanMode"):
             return
 
         conn = self.get_bridge(bridge_id)
@@ -449,12 +462,18 @@ class BridgeManager:
         if len(conn._latency_samples) < 5:
             return
 
+        # Enforce cooldown to prevent oscillation / flapping
+        now = time.monotonic()
+        if now - conn._last_auto_tune_at < conn._auto_tune_cooldown:
+            return
+
         p90 = conn.latency_p90_ms or 0
         jitter = conn.latency_jitter_ms or 0
         new_settings = compute_auto_settings(p90, jitter)
         current = conn.negotiated_settings or {}
 
         if _settings_changed(current, new_settings):
+            conn._last_auto_tune_at = now
             store.update_bridge_config(bridge_id, {"settings": new_settings})
             await conn.push_settings(new_settings)
             logger.info("Auto-tune [%s]: updated settings %s (p90=%.0fms jitter=%.0fms)",
