@@ -311,7 +311,16 @@ class Bridge:
                 if isinstance(message, bytes):
                     await self._handle_binary(message)
                 else:
-                    await self._handle_json(json.loads(message))
+                    parsed = json.loads(message)
+                    if parsed.get("type") == "ping":
+                        # Fast path — respond immediately, bypass dispatcher
+                        pong = json.dumps({"type": "pong"})
+                        t0 = time.monotonic()
+                        await self._ws.send(pong)
+                        self._ws_stats["pong_send_ms"] = (time.monotonic() - t0) * 1000
+                        self._ws_stats["tx_text_frames"] += 1
+                    else:
+                        await self._handle_json(parsed)
 
         async def session_reporter():
             while True:
@@ -382,32 +391,25 @@ class Bridge:
         msg_type = msg.get("type", "")
 
         if msg_type == "attach":
-            await self._handle_attach(msg)
+            asyncio.create_task(self._handle_attach(msg))
         elif msg_type == "detach":
             await self._handle_detach(msg)
         elif msg_type == "resize":
             self._handle_resize(msg)
         elif msg_type == "tmux_cmd":
-            await self._handle_tmux_cmd(msg)
+            asyncio.create_task(self._handle_tmux_cmd(msg))
         elif msg_type == "list_sessions":
-            sessions = await self._collect_sessions()
-            self._ws_stats["tx_text_frames"] += 1
-            await self._ws.send(json.dumps({
-                "type": "sessions",
-                "sessions": sessions,
-                "sources": self._configured_sources(),
-            }))
+            asyncio.create_task(self._handle_list_sessions())
         elif msg_type == "file_read":
-            await self._handle_file_read(msg)
+            asyncio.create_task(self._handle_file_read(msg))
         elif msg_type == "file_write":
-            await self._handle_file_write(msg)
+            asyncio.create_task(self._handle_file_write(msg))
         elif msg_type == "settings":
             await self._apply_settings(msg.get("settings", {}))
         elif msg_type == "ping":
+            # Handled in fast path in message_handler; fallback if called directly
             pong = json.dumps({"type": "pong"})
-            t0 = time.monotonic()
             await self._ws.send(pong)
-            self._ws_stats["pong_send_ms"] = (time.monotonic() - t0) * 1000
             self._ws_stats["tx_text_frames"] += 1
         else:
             logger.debug("Unknown message type: %s", msg_type)
@@ -446,6 +448,16 @@ class Bridge:
         if self._ws:
             await self._ws.send(json.dumps({"type": "settings_ack", "applied": applied}))
             self._ws_stats["tx_text_frames"] += 1
+
+    async def _handle_list_sessions(self) -> None:
+        """Collect and send session list to backend."""
+        sessions = await self._collect_sessions()
+        self._ws_stats["tx_text_frames"] += 1
+        await self._ws.send(json.dumps({
+            "type": "sessions",
+            "sessions": sessions,
+            "sources": self._configured_sources(),
+        }))
 
     async def _handle_attach(self, msg: dict) -> None:
         """Attach to a tmux session and start a PTY."""

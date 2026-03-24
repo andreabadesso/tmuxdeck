@@ -55,15 +55,35 @@ async def _ping_loop(conn: BridgeConnection, interval: float = PING_INTERVAL) ->
         pass
 
 
+# Per-channel semaphore to bound concurrent forwards and preserve ordering
+_channel_semaphores: dict[int, asyncio.Semaphore] = {}
+_FORWARD_CONCURRENCY = 64
+
+
+def _get_channel_semaphore(channel_id: int) -> asyncio.Semaphore:
+    sem = _channel_semaphores.get(channel_id)
+    if sem is None:
+        sem = asyncio.Semaphore(_FORWARD_CONCURRENCY)
+        _channel_semaphores[channel_id] = sem
+    return sem
+
+
 async def _forward_bytes(conn: BridgeConnection, channel_id: int, user_ws: WebSocket, data: bytes) -> None:
     """Forward binary data to user WebSocket, with timeout to avoid blocking indefinitely."""
-    try:
-        await asyncio.wait_for(user_ws.send_bytes(data), timeout=5.0)
-    except asyncio.TimeoutError:
-        logger.warning("Forward timeout on ch %d — dropping slow client", channel_id)
-        conn.unregister_terminal(channel_id)
-    except Exception:
-        conn.unregister_terminal(channel_id)
+    sem = _get_channel_semaphore(channel_id)
+    if sem.locked():
+        # All slots full — drop frame (backpressure) rather than queuing unbounded
+        return
+    async with sem:
+        try:
+            await asyncio.wait_for(user_ws.send_bytes(data), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Forward timeout on ch %d — dropping slow client", channel_id)
+            conn.unregister_terminal(channel_id)
+            _channel_semaphores.pop(channel_id, None)
+        except Exception:
+            conn.unregister_terminal(channel_id)
+            _channel_semaphores.pop(channel_id, None)
 
 
 async def _bridge_cleanup_timer(
@@ -194,7 +214,7 @@ async def bridge_ws(websocket: WebSocket):
                 user_ws = conn.get_terminal_ws(channel_id)
                 if user_ws:
                     _fwd_tasks += 1
-                    await _forward_bytes(conn, channel_id, user_ws, payload)
+                    asyncio.create_task(_forward_bytes(conn, channel_id, user_ws, payload))
 
             # Text frame: JSON control message
             elif "text" in message and message["text"]:
@@ -297,6 +317,10 @@ async def bridge_ws(websocket: WebSocket):
             ping_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await ping_task
+        # Clean up per-channel semaphores for this bridge
+        if conn:
+            for ch_id in list(conn._terminal_relays):
+                _channel_semaphores.pop(ch_id, None)
         if conn and conn.has_terminals():
             # Bridge disconnected but terminals are active — keep conn alive
             conn.set_disconnected()
