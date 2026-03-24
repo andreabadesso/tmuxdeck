@@ -485,6 +485,7 @@ export function SessionItem({
         ) : (
           <span
             className="flex-1 text-xs truncate"
+            title={session.name}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (clickTimerRef.current) {
@@ -585,7 +586,7 @@ export function SessionItem({
                     />
                   );
                 })()}
-                <span className="text-xs truncate flex-1">
+                <span className="text-xs truncate flex-1" title={win.name}>
                   {win.index}: {win.name}
                 </span>
                 <span className="shrink-0 w-[38px] text-[10px] text-right">

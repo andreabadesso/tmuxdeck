@@ -34,9 +34,27 @@ interface SidebarProps {
   setContainerExpanded?: (containerId: string, expanded: boolean) => void;
 }
 
+const SIDEBAR_WIDTH_KEY = 'sidebar-width';
+const SIDEBAR_MIN_WIDTH = 160;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 288;
+
+function getSavedSidebarWidth(): number {
+  try {
+    const v = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (v) {
+      const n = parseInt(v, 10);
+      if (n >= SIDEBAR_MIN_WIDTH && n <= SIDEBAR_MAX_WIDTH) return n;
+    }
+  } catch {}
+  return SIDEBAR_DEFAULT_WIDTH;
+}
+
 export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewSession, onSelectSession, onPreviewSession, onPreviewEnd, digitByTargetKey, assignDigit, isSessionExpanded, setSessionExpanded, isContainerExpanded, setContainerExpanded }: SidebarProps) {
   const [collapsed, setCollapsedRaw] = useState(() => initialCollapsed ?? getSidebarCollapsed());
   const setCollapsed = (v: boolean) => { setCollapsedRaw(v); saveSidebarCollapsed(v); };
+  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
+  const isResizing = useRef(false);
   const [showNewContainer, setShowNewContainer] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
   const [sectionsCollapsed, setSectionsCollapsedRaw] = useState<Record<string, boolean>>(getSectionsCollapsed);
@@ -55,6 +73,30 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
     const el = container.querySelector('[data-selected="true"]') as HTMLElement | null;
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedSession]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const onMouseMove = (ev: MouseEvent) => {
+      const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX));
+      setSidebarWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Save final width
+      setSidebarWidth((w) => { try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch {} return w; });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [sidebarWidth]);
 
   // When not on main page, clicking a session window navigates to main with selection
   const handleSelectSession = onSelectSession ?? ((containerId: string, sessionName: string, windowIndex: number) => {
@@ -148,7 +190,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
 
   return (
     <>
-      <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
+      <div className="bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 relative" style={{ width: sidebarWidth }}>
         <div className="flex items-center justify-between px-3 py-3 border-b border-gray-800">
           <button
             onClick={() => navigate('/')}
@@ -303,6 +345,12 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
             Help
           </button>
         </div>
+
+        {/* Resize drag handle */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-500/40 transition-colors"
+        />
       </div>
 
       {showNewContainer && (

@@ -235,6 +235,7 @@ export function ContainerNode({
             className={`flex-1 text-sm text-gray-300 truncate px-1 select-none ${
               isSpecial || isRunning ? 'cursor-pointer hover:text-gray-100' : 'cursor-default'
             }`}
+            title={container.displayName}
             onClick={() => {
               if (isSpecial) setExpanded(!expanded);
               else if (isRunning) setExpanded(!expanded);
