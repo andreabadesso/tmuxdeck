@@ -24,7 +24,7 @@ class BridgeConfig:
     reconnect_max: float = 60.0
     ping_interval: float = 15.0  # WebSocket ping interval (seconds)
     ping_timeout: float = 5.0  # WebSocket ping timeout (seconds)
-    compression: str = "deflate"  # "deflate" or "none"
+    compression: str = "none"  # "deflate" or "none"
 
 
 def parse_config() -> BridgeConfig:
@@ -80,8 +80,12 @@ def parse_config() -> BridgeConfig:
         help="WebSocket ping timeout in seconds (default: 5)",
     )
     parser.add_argument(
+        "--compression", action="store_true",
+        help="Enable WebSocket per-message deflate compression (off by default for lower latency)",
+    )
+    parser.add_argument(
         "--no-compression", action="store_true",
-        help="Disable WebSocket compression (deflate)",
+        help="(deprecated, compression is now off by default)",
     )
 
     args = parser.parse_args()
@@ -106,5 +110,5 @@ def parse_config() -> BridgeConfig:
         session_report_interval=args.report_interval,
         ping_interval=args.ping_interval,
         ping_timeout=args.ping_timeout,
-        compression="none" if args.no_compression else "deflate",
+        compression="deflate" if args.compression else "none",
     )

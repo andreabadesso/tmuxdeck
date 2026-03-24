@@ -14,6 +14,14 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
 
+    # Use uvloop for lower-latency I/O if available
+    try:
+        import uvloop
+        uvloop.install()
+        logging.info("Using uvloop event loop")
+    except ImportError:
+        logging.info("uvloop not available, using default asyncio event loop")
+
     from .bridge import Bridge
     from .config import parse_config
 

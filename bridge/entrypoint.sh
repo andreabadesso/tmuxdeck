@@ -9,4 +9,4 @@ if [ -n "$HOST_TMUX_SOCKET" ]; then
         chmod 700 "$tmux_dir" 2>/dev/null || true
     fi
 fi
-exec uv run tmuxdeck-bridge "$@"
+exec nice -n -10 uv run tmuxdeck-bridge "$@"
