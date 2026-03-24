@@ -118,6 +118,7 @@ export interface Settings {
   telegramVoiceNotifications?: boolean;
   hotkeys?: Record<string, string>;
   snapshotEnabled?: boolean;
+  tmuxAutoRenameFormat?: string;
 }
 
 export interface ClaudeNotification {

@@ -32,6 +32,7 @@ def _to_response(data: dict) -> SettingsResponse:
         audio_debug_log=data.get("audioDebugLog", False),
         telegram_voice_notifications=data.get("telegramVoiceNotifications", False),
         hotkeys={**_DEFAULT_HOTKEYS, **data.get("hotkeys", {})},
+        tmux_auto_rename_format=data.get("tmuxAutoRenameFormat", ""),
     )
 
 
@@ -65,6 +66,8 @@ async def update_settings(req: UpdateSettingsRequest):
         updates["audioDebugLog"] = req.audio_debug_log
     if req.hotkeys is not None:
         updates["hotkeys"] = req.hotkeys
+    if req.tmux_auto_rename_format is not None:
+        updates["tmuxAutoRenameFormat"] = req.tmux_auto_rename_format
 
     return _to_response(store.update_settings(updates))
 

@@ -103,6 +103,29 @@ async def _set_tmux_monitor_activity(tmux_prefix: list[str]) -> None:
         pass
 
 
+async def _set_tmux_auto_rename(tmux_prefix: list[str]) -> None:
+    """Set automatic-rename-format for descriptive window titles."""
+    from .. import store
+    from ..services.tmux_manager import DEFAULT_AUTO_RENAME_FORMAT
+    fmt = store.get_settings().get("tmuxAutoRenameFormat", "")
+    fmt = fmt if fmt else DEFAULT_AUTO_RENAME_FORMAT
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "set-option", "-gw", "automatic-rename", "on",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        proc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "set-option", "-gw", "automatic-rename-format", fmt,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except OSError:
+        pass
+
+
 async def _get_tmux_option(tmux_prefix: list[str], option: str) -> str:
     """Read a global tmux option value. Returns empty string on error."""
     try:
@@ -936,6 +959,8 @@ async def terminal_ws(
             await _set_tmux_passthrough(tmux_prefix)
             # Enable activity monitoring for sidebar indicators
             await _set_tmux_monitor_activity(tmux_prefix)
+            # Auto-rename windows with configurable format
+            await _set_tmux_auto_rename(tmux_prefix)
             cmd = [*tmux_prefix, "attach-session", "-t", target]
             await _pty_terminal(websocket, cmd, label="Local",
                                 tmux_prefix=tmux_prefix, session_name=session_name,
@@ -963,6 +988,8 @@ async def terminal_ws(
             await _set_tmux_passthrough(tmux_prefix)
             # Enable activity monitoring for sidebar indicators
             await _set_tmux_monitor_activity(tmux_prefix)
+            # Auto-rename windows with configurable format
+            await _set_tmux_auto_rename(tmux_prefix)
             cmd = [*tmux_prefix, "attach-session", "-t", target]
             await _pty_terminal(websocket, cmd, label="Host",
                                 tmux_prefix=tmux_prefix, session_name=session_name,
@@ -1004,6 +1031,14 @@ async def terminal_ws(
         await dm.exec_command(container_id, ["tmux", "set-option", "-g", "monitor-activity", "on"])
         # No alert (no bell, no status message) — just set the window flag.
         await dm.exec_command(container_id, ["tmux", "set-option", "-g", "activity-action", "none"])
+
+        # Auto-rename windows with configurable format
+        from .. import store as _store
+        from ..services.tmux_manager import DEFAULT_AUTO_RENAME_FORMAT
+        _fmt = _store.get_settings().get("tmuxAutoRenameFormat", "")
+        _fmt = _fmt if _fmt else DEFAULT_AUTO_RENAME_FORMAT
+        await dm.exec_command(container_id, ["tmux", "set-option", "-gw", "automatic-rename", "on"])
+        await dm.exec_command(container_id, ["tmux", "set-option", "-gw", "automatic-rename-format", _fmt])
 
         # Start interactive docker exec: tmux attach
         cmd = ["tmux", "attach-session", "-t", target]

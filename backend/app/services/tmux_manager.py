@@ -15,6 +15,14 @@ logger = logging.getLogger(__name__)
 HOST_CONTAINER_ID = "host"
 LOCAL_CONTAINER_ID = "local"
 
+DEFAULT_AUTO_RENAME_FORMAT = '#{pane_current_command}#{?#{!=:#{pane_title},}, : #{pane_title},}#{?pane_dead, [dead],}'
+
+
+def _get_auto_rename_format() -> str:
+    from .. import store
+    fmt = store.get_settings().get("tmuxAutoRenameFormat", "")
+    return fmt if fmt else DEFAULT_AUTO_RENAME_FORMAT
+
 
 def _is_host(container_id: str) -> bool:
     return container_id == HOST_CONTAINER_ID
@@ -285,6 +293,16 @@ class TmuxManager:
         await self._run_cmd(
             container_id,
             ["tmux", "set-option", "-g", "pane-base-index", "1"],
+        )
+        # Auto-rename windows with configurable format
+        auto_fmt = _get_auto_rename_format()
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-gw", "automatic-rename", "on"],
+        )
+        await self._run_cmd(
+            container_id,
+            ["tmux", "set-option", "-gw", "automatic-rename-format", auto_fmt],
         )
         # Return the new session info
         return {
@@ -563,6 +581,16 @@ class TmuxManager:
                 await self._run_cmd(
                     container_id,
                     ["tmux", "set-option", "-g", "pane-base-index", "1"],
+                )
+                # Auto-rename windows with configurable format
+                auto_fmt = _get_auto_rename_format()
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-gw", "automatic-rename", "on"],
+                )
+                await self._run_cmd(
+                    container_id,
+                    ["tmux", "set-option", "-gw", "automatic-rename-format", auto_fmt],
                 )
                 return
         await self.create_session(container_id, session_name)

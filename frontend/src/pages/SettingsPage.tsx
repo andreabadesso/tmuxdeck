@@ -29,6 +29,7 @@ export function SettingsPage() {
   const [sshKeyPath, setSshKeyPath] = useState('');
   const [terminalPoolSize, setTerminalPoolSize] = useState(8);
   const [snapshotEnabled, setSnapshotEnabled] = useState(true);
+  const [tmuxAutoRenameFormat, setTmuxAutoRenameFormat] = useState('');
   const [naturalTouchScroll, setNaturalTouchScroll] = useState(() => getNaturalTouchScroll());
   const [isDirty, setIsDirty] = useState(false);
 
@@ -40,6 +41,7 @@ export function SettingsPage() {
     setSshKeyPath(settings.sshKeyPath);
     setTerminalPoolSize(settings.terminalPoolSize ?? 8);
     setSnapshotEnabled(settings.snapshotEnabled ?? true);
+    setTmuxAutoRenameFormat(settings.tmuxAutoRenameFormat ?? '');
     setIsDirty(false);
   }
 
@@ -50,6 +52,7 @@ export function SettingsPage() {
         sshKeyPath,
         terminalPoolSize,
         snapshotEnabled,
+        tmuxAutoRenameFormat,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -151,6 +154,21 @@ export function SettingsPage() {
             />
             <p className="text-xs text-gray-600 mt-1">
               Number of terminal instances kept alive simultaneously (1-32, default 8)
+            </p>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm text-gray-400 mb-1">Window Rename Format</label>
+            <input
+              value={tmuxAutoRenameFormat}
+              onChange={(e) => {
+                setTmuxAutoRenameFormat(e.target.value);
+                markDirty();
+              }}
+              placeholder="#{pane_current_command}#{?#{!=:#{pane_title},}, : #{pane_title},}#{?pane_dead, [dead],}"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 font-mono"
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              tmux automatic-rename-format — use tmux format strings. Leave blank for default.
             </p>
           </div>
           <label className="flex items-center gap-3 cursor-pointer mt-4">

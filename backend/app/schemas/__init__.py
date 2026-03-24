@@ -173,6 +173,7 @@ class SettingsResponse(CamelModel):
     telegram_voice_notifications: bool
     hotkeys: dict[str, str]
     snapshot_enabled: bool = True
+    tmux_auto_rename_format: str = ""
 
 
 class UpdateSettingsRequest(CamelModel):
@@ -189,6 +190,7 @@ class UpdateSettingsRequest(CamelModel):
     telegram_voice_notifications: bool | None = None
     hotkeys: dict[str, str] | None = None
     snapshot_enabled: bool | None = None
+    tmux_auto_rename_format: str | None = None
 
 
 # --- Notifications ---
