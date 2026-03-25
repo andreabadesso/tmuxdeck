@@ -25,6 +25,7 @@ interface TerminalProps {
   onOpenFile?: (path: string) => void;
   onReady?: () => void;
   onSessionGone?: () => void;
+  onActiveWindowChanged?: (windowIndex: number) => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -130,6 +131,8 @@ function connectWebSocket(
   onDisconnected: (code?: number) => void,
   onFirstData?: () => void,
   onSessionGone?: () => void,
+  onActiveWindowChanged?: (windowIndex: number) => void,
+  windowIndexRef?: { current: number },
 ): { ws: WebSocket; close: () => void } {
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
@@ -183,7 +186,16 @@ function connectWebSocket(
         return;
       }
       if (text.startsWith('WINDOW_STATE:')) {
-        return; // Control message consumed by native clients only
+        try {
+          const state = JSON.parse(text.slice('WINDOW_STATE:'.length));
+          const active = state.active;
+          if (typeof active === 'number' && onActiveWindowChanged) {
+            // Update ref first to prevent redundant SELECT_WINDOW when prop changes
+            if (windowIndexRef) windowIndexRef.current = active;
+            onActiveWindowChanged(active);
+          }
+        } catch { /* ignore malformed */ }
+        return;
       }
       term.write(text);
     }
@@ -219,6 +231,7 @@ function setupWebSocketTerminal(
   _osc52TextRef: { current: string | null },
   onFirstData?: () => void,
   onSessionGone?: () => void,
+  onActiveWindowChangedGetter?: () => ((windowIndex: number) => void) | undefined,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -462,6 +475,8 @@ function setupWebSocketTerminal(
       },
       () => { receivedData = true; onFirstData?.(); },
       () => { if (!sessionGone) markSessionGone(); },
+      onActiveWindowChangedGetter ? (idx: number) => onActiveWindowChangedGetter()?.(idx) : undefined,
+      windowIndexRef,
     );
     currentClose = close;
   }
@@ -596,7 +611,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone, onActiveWindowChanged }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -614,6 +629,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   onReadyRef.current = onReady;
   const onSessionGoneRef = useRef(onSessionGone);
   onSessionGoneRef.current = onSessionGone;
+  const onActiveWindowChangedRef = useRef(onActiveWindowChanged);
+  onActiveWindowChangedRef.current = onActiveWindowChanged;
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
@@ -795,7 +812,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.(), () => onSessionGoneRef.current?.());
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.(), () => onSessionGoneRef.current?.(), () => onActiveWindowChangedRef.current ?? undefined);
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;

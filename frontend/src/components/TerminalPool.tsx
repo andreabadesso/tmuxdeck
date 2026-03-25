@@ -14,10 +14,11 @@ interface TerminalPoolProps {
   entries: PoolEntry[];
   activeKey: string | null;
   onOpenFile?: (containerId: string, path: string) => void;
+  onActiveWindowChanged?: (containerId: string, sessionName: string, windowIndex: number) => void;
 }
 
 export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
-  function TerminalPool({ entries, activeKey, onOpenFile }, ref) {
+  function TerminalPool({ entries, activeKey, onOpenFile, onActiveWindowChanged }, ref) {
     // Use useState with lazy init to hold the refs map — avoids useRef.current access during render
     const [refsMap] = useState(() => new Map<string, React.RefObject<TerminalHandle | null>>());
     // Track which terminals have received their first data
@@ -140,6 +141,7 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                 autoFocus={false}
                 visible={isActive}
                 onOpenFile={onOpenFile ? (path) => onOpenFile(entry.containerId, path) : undefined}
+                onActiveWindowChanged={onActiveWindowChanged ? (idx) => onActiveWindowChanged(entry.containerId, entry.sessionName, idx) : undefined}
                 onReady={() => setReadyKeys(prev => {
                   if (prev.has(entry.key)) return prev;
                   const next = new Set(prev);
