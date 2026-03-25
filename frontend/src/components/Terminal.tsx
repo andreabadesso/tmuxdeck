@@ -25,7 +25,7 @@ interface TerminalProps {
   onOpenFile?: (path: string) => void;
   onReady?: () => void;
   onSessionGone?: () => void;
-  onActiveWindowChanged?: (windowIndex: number) => void;
+  onActiveWindowChanged?: (sessionName: string, windowIndex: number) => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -131,7 +131,7 @@ function connectWebSocket(
   onDisconnected: (code?: number) => void,
   onFirstData?: () => void,
   onSessionGone?: () => void,
-  onActiveWindowChanged?: (windowIndex: number) => void,
+  onActiveWindowChanged?: (sessionName: string, windowIndex: number) => void,
   windowIndexRef?: { current: number },
 ): { ws: WebSocket; close: () => void } {
   const ws = new WebSocket(wsUrl);
@@ -189,10 +189,11 @@ function connectWebSocket(
         try {
           const state = JSON.parse(text.slice('WINDOW_STATE:'.length));
           const active = state.active;
-          if (typeof active === 'number' && onActiveWindowChanged) {
+          const session = state.session;
+          if (typeof active === 'number' && typeof session === 'string' && onActiveWindowChanged) {
             // Update ref first to prevent redundant SELECT_WINDOW when prop changes
             if (windowIndexRef) windowIndexRef.current = active;
-            onActiveWindowChanged(active);
+            onActiveWindowChanged(session, active);
           }
         } catch { /* ignore malformed */ }
         return;
@@ -231,7 +232,7 @@ function setupWebSocketTerminal(
   _osc52TextRef: { current: string | null },
   onFirstData?: () => void,
   onSessionGone?: () => void,
-  onActiveWindowChangedGetter?: () => ((windowIndex: number) => void) | undefined,
+  onActiveWindowChangedGetter?: () => ((sessionName: string, windowIndex: number) => void) | undefined,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -475,7 +476,7 @@ function setupWebSocketTerminal(
       },
       () => { receivedData = true; onFirstData?.(); },
       () => { if (!sessionGone) markSessionGone(); },
-      onActiveWindowChangedGetter ? (idx: number) => onActiveWindowChangedGetter()?.(idx) : undefined,
+      onActiveWindowChangedGetter ? (session: string, idx: number) => onActiveWindowChangedGetter()?.(session, idx) : undefined,
       windowIndexRef,
     );
     currentClose = close;

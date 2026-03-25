@@ -246,15 +246,14 @@ export function MainPage() {
     setSelectedSession(target);
   }, [clearPreviewImmediate]);
 
-  // Follow tmux window changes initiated from the terminal (e.g. C-B N, C-B S)
+  // Follow tmux window/session changes initiated from the terminal (e.g. C-B N, C-B S)
   const handleActiveWindowChanged = useCallback((containerId: string, sessionName: string, windowIndex: number) => {
     setSelectedSession((prev) => {
       if (
         prev &&
         isWindowSelection(prev) &&
         prev.containerId === containerId &&
-        prev.sessionName === sessionName &&
-        prev.windowIndex !== windowIndex
+        (prev.sessionName !== sessionName || prev.windowIndex !== windowIndex)
       ) {
         pool.ensure({ containerId, sessionName, windowIndex });
         return { containerId, sessionName, windowIndex };

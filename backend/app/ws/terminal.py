@@ -213,6 +213,7 @@ async def _pty_terminal(
     tmux_prefix: list[str] | None = None,
     session_name: str | None = None,
     container_id: str | None = None,
+    original_session: str | None = None,
 ) -> None:
     """Handle a tmux session via a local PTY with the given command.
 
@@ -586,6 +587,47 @@ async def _pty_terminal(
         except (OSError, WebSocketDisconnect):
             pass
 
+    async def _resolve_client_session() -> tuple[str, str]:
+        """Detect which session the tmux client is currently on.
+
+        Returns (resolved_session_name, query_session) where
+        resolved_session_name is the real (non-view) session name for
+        the frontend, and query_session is the tmux session to query
+        for list_windows/list_panes.
+        """
+        client_pid = str(proc.pid)
+        lc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "list-clients",
+            "-F", "#{client_pid}|#{client_session}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=_clean_env(),
+        )
+        stdout, _ = await lc.communicate()
+        client_session: str | None = None
+        for line in stdout.decode().strip().splitlines():
+            parts = line.split("|", 1)
+            if len(parts) == 2 and parts[0] == client_pid:
+                client_session = parts[1]
+                break
+        if not client_session:
+            # Client not found — fall back to view session
+            return (original_session or session_name, session_name)
+        # If client is on a view session, resolve to the real session
+        # via session_group
+        if client_session.startswith(VIEW_SESSION_PREFIX):
+            dm = await asyncio.create_subprocess_exec(
+                *tmux_prefix, "display-message", "-p",
+                "-t", client_session, "#{session_group}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=_clean_env(),
+            )
+            sg_out, _ = await dm.communicate()
+            group = sg_out.decode().strip()
+            return (group or client_session, client_session)
+        return (client_session, client_session)
+
     async def poll_window_state() -> None:
         """Periodically check tmux window state and notify the frontend."""
         if not tmux_prefix or not session_name or not container_id:
@@ -595,11 +637,15 @@ async def _pty_terminal(
         tm = TmuxManager.get()
         last_active: int | None = None
         last_windows: list[dict] | None = None
+        last_resolved: str | None = None
         try:
             while True:
                 await asyncio.sleep(3 + random.uniform(0, 1))
                 try:
-                    windows = await tm.list_windows(container_id, session_name)
+                    # Detect which session the tmux client is actually on
+                    resolved_session, query_session = await _resolve_client_session()
+
+                    windows = await tm.list_windows(container_id, query_session)
                     active = next(
                         (w["index"] for w in windows if w.get("active")), None,
                     )
@@ -617,21 +663,23 @@ async def _pty_terminal(
                         else None
                     )
 
-                    if active != last_active or win_summary != last_summary:
+                    if active != last_active or win_summary != last_summary or resolved_session != last_resolved:
                         last_active = active
                         last_windows = windows
+                        last_resolved = resolved_session
                         # Include panes of the active window
                         panes = []
                         if active is not None:
                             try:
-                                panes = await tm.list_panes(container_id, session_name, active)
+                                panes = await tm.list_panes(container_id, query_session, active)
                             except Exception:
                                 pass
                         payload = json.dumps(
-                            {"active": active, "windows": windows, "panes": panes}
+                            {"active": active, "windows": windows, "panes": panes,
+                             "session": resolved_session}
                         )
-                        logger.debug("%s poll: sending WINDOW_STATE (active=%s, %d windows)",
-                                    label, active, len(windows))
+                        logger.debug("%s poll: sending WINDOW_STATE (session=%s, active=%s, %d windows)",
+                                    label, resolved_session, active, len(windows))
                         await websocket.send_text(f"WINDOW_STATE:{payload}")
                 except (OSError, asyncio.CancelledError):
                     raise
@@ -998,7 +1046,8 @@ async def terminal_ws(
             cmd = [*tmux_prefix, "attach-session", "-t", f"{view_name}:{window_index}"]
             await _pty_terminal(websocket, cmd, label="Local",
                                 tmux_prefix=tmux_prefix, session_name=view_name,
-                                container_id=container_id)
+                                container_id=container_id,
+                                original_session=session_name)
         except WebSocketDisconnect:
             pass
         except Exception as e:
@@ -1032,7 +1081,8 @@ async def terminal_ws(
             cmd = [*tmux_prefix, "attach-session", "-t", f"{view_name}:{window_index}"]
             await _pty_terminal(websocket, cmd, label="Host",
                                 tmux_prefix=tmux_prefix, session_name=view_name,
-                                container_id=container_id)
+                                container_id=container_id,
+                                original_session=session_name)
         except WebSocketDisconnect:
             pass
         except Exception as e:

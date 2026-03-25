@@ -141,7 +141,7 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                 autoFocus={false}
                 visible={isActive}
                 onOpenFile={onOpenFile ? (path) => onOpenFile(entry.containerId, path) : undefined}
-                onActiveWindowChanged={onActiveWindowChanged ? (idx) => onActiveWindowChanged(entry.containerId, entry.sessionName, idx) : undefined}
+                onActiveWindowChanged={isActive && onActiveWindowChanged ? (session, idx) => onActiveWindowChanged(entry.containerId, session, idx) : undefined}
                 onReady={() => setReadyKeys(prev => {
                   if (prev.has(entry.key)) return prev;
                   const next = new Set(prev);
