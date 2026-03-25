@@ -12,6 +12,7 @@ import time
 import signal
 import struct
 import termios
+import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -34,6 +35,43 @@ def _clean_env() -> dict[str, str]:
     # Tell tmux the outer terminal is xterm-compatible (supports CSI u, etc.)
     env["TERM"] = "xterm-256color"
     return env
+
+
+VIEW_SESSION_PREFIX = "_view_"
+
+
+async def _create_view_session(
+    tmux_prefix: list[str], original_session: str, window_index: int,
+) -> str:
+    """Create a grouped (linked) tmux session for independent window navigation.
+
+    Returns the view session name.  The grouped session shares the same
+    window group as *original_session* but has its own "current window"
+    pointer, allowing multiple clients to view different windows.
+    """
+    view_name = f"{VIEW_SESSION_PREFIX}{uuid.uuid4().hex[:8]}"
+    proc = await asyncio.create_subprocess_exec(
+        *tmux_prefix, "new-session", "-d", "-t", original_session, "-s", view_name,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        env=_clean_env(),
+    )
+    await proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to create view session for {original_session}")
+    return view_name
+
+
+async def _kill_view_session(tmux_prefix: list[str], view_name: str) -> None:
+    """Best-effort cleanup of a grouped view session."""
+    with contextlib.suppress(Exception):
+        proc = await asyncio.create_subprocess_exec(
+            *tmux_prefix, "kill-session", "-t", view_name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=_clean_env(),
+        )
+        await proc.wait()
 
 
 async def _set_tmux_extended_keys(tmux_prefix: list[str]) -> None:
@@ -645,6 +683,7 @@ async def _bridge_terminal(
 
     channel_id = conn.allocate_channel()
     source = bridge_source_from_container(container_id)
+    view_name: str | None = None
 
     try:
         # Set tmux options on the remote server before attaching
@@ -683,10 +722,26 @@ async def _bridge_terminal(
         except asyncio.TimeoutError:
             logger.debug("Bridge RESIZE wait timed out, using defaults 80x24")
 
+        # Create grouped session for independent window navigation
+        view_name = f"{VIEW_SESSION_PREFIX}{uuid.uuid4().hex[:8]}"
+        try:
+            await conn.request({
+                "type": "tmux_cmd",
+                "cmd": ["tmux", "new-session", "-d", "-t", session_name, "-s", view_name],
+                "source": source,
+            }, timeout=5)
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.error("Bridge create view session failed: %s", e)
+            await websocket.send_text("SESSION_GONE:")
+            await websocket.close(code=4404, reason="Failed to create view session")
+            return
+        # Use view session name for all subsequent operations
+        session_name = view_name
+
         # Request the bridge to attach to the tmux session
         result = await conn.request({
             "type": "attach",
-            "session_name": session_name,
+            "session_name": view_name,
             "window_index": window_index,
             "channel_id": channel_id,
             "cols": cols,
@@ -856,6 +911,16 @@ async def _bridge_terminal(
             })
         except Exception:
             pass
+        # Clean up grouped view session
+        if view_name:
+            try:
+                await conn.send_json({
+                    "type": "tmux_cmd",
+                    "cmd": ["tmux", "kill-session", "-t", view_name],
+                    "source": source,
+                })
+            except Exception:
+                pass
         conn.unregister_terminal(channel_id)
 
 
@@ -895,6 +960,7 @@ async def terminal_ws(
         return
 
     if _is_local(container_id):
+        view_name: str | None = None
         try:
             tmux_prefix = ["tmux"]
             if not await _tmux_session_exists(tmux_prefix, target):
@@ -909,20 +975,25 @@ async def terminal_ws(
             await _set_tmux_monitor_activity(tmux_prefix)
             # Auto-rename windows with configurable format
             await _set_tmux_auto_rename(tmux_prefix)
-            cmd = [*tmux_prefix, "attach-session", "-t", target]
+            # Create grouped session for independent window navigation
+            view_name = await _create_view_session(tmux_prefix, session_name, window_index)
+            cmd = [*tmux_prefix, "attach-session", "-t", f"{view_name}:{window_index}"]
             await _pty_terminal(websocket, cmd, label="Local",
-                                tmux_prefix=tmux_prefix, session_name=session_name,
+                                tmux_prefix=tmux_prefix, session_name=view_name,
                                 container_id=container_id)
         except WebSocketDisconnect:
             pass
         except Exception as e:
             logger.error("Local terminal WebSocket error: %s", e)
         finally:
+            if view_name:
+                await _kill_view_session(tmux_prefix, view_name)
             with contextlib.suppress(Exception):
                 await websocket.close()
         return
 
     if _is_host(container_id):
+        view_name: str | None = None
         try:
             socket = config.host_tmux_socket
             tmux_prefix = ["tmux", "-S", socket]
@@ -938,15 +1009,19 @@ async def terminal_ws(
             await _set_tmux_monitor_activity(tmux_prefix)
             # Auto-rename windows with configurable format
             await _set_tmux_auto_rename(tmux_prefix)
-            cmd = [*tmux_prefix, "attach-session", "-t", target]
+            # Create grouped session for independent window navigation
+            view_name = await _create_view_session(tmux_prefix, session_name, window_index)
+            cmd = [*tmux_prefix, "attach-session", "-t", f"{view_name}:{window_index}"]
             await _pty_terminal(websocket, cmd, label="Host",
-                                tmux_prefix=tmux_prefix, session_name=session_name,
+                                tmux_prefix=tmux_prefix, session_name=view_name,
                                 container_id=container_id)
         except WebSocketDisconnect:
             pass
         except Exception as e:
             logger.error("Host terminal WebSocket error: %s", e)
         finally:
+            if view_name:
+                await _kill_view_session(tmux_prefix, view_name)
             with contextlib.suppress(Exception):
                 await websocket.close()
         return
@@ -954,6 +1029,7 @@ async def terminal_ws(
     dm = DockerManager.get()
     exec_id = None
     sock = None
+    view_name: str | None = None
 
     try:
         # Check if the tmux session exists before attaching
@@ -988,8 +1064,17 @@ async def terminal_ws(
         await dm.exec_command(container_id, ["tmux", "set-option", "-gw", "automatic-rename", "on"])
         await dm.exec_command(container_id, ["tmux", "set-option", "-gw", "automatic-rename-format", _fmt])
 
+        # Create grouped session for independent window navigation
+        view_name = f"{VIEW_SESSION_PREFIX}{uuid.uuid4().hex[:8]}"
+        await dm.exec_command(
+            container_id,
+            ["tmux", "new-session", "-d", "-t", session_name, "-s", view_name],
+        )
+        # Use view session name for all control messages
+        session_name = view_name
+
         # Start interactive docker exec: tmux attach
-        cmd = ["tmux", "attach-session", "-t", target]
+        cmd = ["tmux", "attach-session", "-t", f"{view_name}:{window_index}"]
         exec_id, sock = await dm.exec_interactive(container_id, cmd)
 
         # Warn frontend if tmux mouse mode is on (breaks text selection)
@@ -1349,6 +1434,9 @@ async def terminal_ws(
     except Exception as e:
         logger.error("Terminal WebSocket error: %s", e)
     finally:
+        if view_name:
+            with contextlib.suppress(Exception):
+                await dm.exec_command(container_id, ["tmux", "kill-session", "-t", view_name])
         if sock:
             try:
                 raw_sock = sock._sock if hasattr(sock, "_sock") else sock

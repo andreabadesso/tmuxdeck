@@ -989,6 +989,9 @@ class Bridge:
             if len(parts) < 4:
                 continue
             name = parts[0]
+            # Skip internal view sessions used for independent window navigation
+            if name.startswith("_view_"):
+                continue
             try:
                 created_ts = int(parts[2])
                 created = datetime.fromtimestamp(created_ts, tz=UTC).isoformat()
@@ -1234,6 +1237,9 @@ class Bridge:
                         if len(parts) < 4:
                             continue
                         name = parts[0]
+                        # Skip internal view sessions
+                        if name.startswith("_view_"):
+                            continue
                         try:
                             created_ts = int(parts[2])
                             created = datetime.fromtimestamp(created_ts, tz=UTC).isoformat()

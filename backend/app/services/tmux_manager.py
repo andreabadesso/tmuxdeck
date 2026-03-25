@@ -179,6 +179,9 @@ class TmuxManager:
             if len(parts) < 5:
                 continue
             session_name = parts[0]
+            # Skip internal view sessions used for independent window navigation
+            if session_name.startswith("_view_"):
+                continue
             window = {
                 "index": int(parts[1]) if parts[1].isdigit() else 0,
                 "name": parts[2],
@@ -229,6 +232,9 @@ class TmuxManager:
             if len(parts) < 4:
                 continue
             name = parts[0]
+            # Skip internal view sessions used for independent window navigation
+            if name.startswith("_view_"):
+                continue
             try:
                 created_ts = int(parts[2])
                 created = datetime.fromtimestamp(created_ts, tz=UTC).isoformat()
