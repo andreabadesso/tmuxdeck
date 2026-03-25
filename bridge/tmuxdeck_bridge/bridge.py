@@ -254,6 +254,19 @@ class Bridge:
             return f"{n / 1024:.1f}KB"
         return f"{n}B"
 
+    async def _loop_lag_monitor(self) -> None:
+        """Detect event loop blocking.  Warns when a single iteration takes >5ms."""
+        try:
+            while True:
+                t0 = time.monotonic()
+                await asyncio.sleep(0)
+                lag_ms = (time.monotonic() - t0) * 1000
+                if lag_ms > 5.0:
+                    logger.warning("Event loop lag: %.0fms", lag_ms)
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+
     async def _stats_loop(self) -> None:
         """Log WebSocket traffic stats every 10s, then reset counters."""
         try:
@@ -359,19 +372,16 @@ class Bridge:
         self._reset_stats()
         reporter = asyncio.create_task(session_reporter())
         stats_task = asyncio.create_task(self._stats_loop())
+        lag_task = asyncio.create_task(self._loop_lag_monitor())
         try:
             await message_handler()
         finally:
-            reporter.cancel()
-            stats_task.cancel()
-            try:
-                await reporter
-            except asyncio.CancelledError:
-                pass
-            try:
-                await stats_task
-            except asyncio.CancelledError:
-                pass
+            for t in (reporter, stats_task, lag_task):
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     async def _handle_binary(self, data: bytes) -> None:
         """Route binary frame to the correct terminal session."""
@@ -923,9 +933,10 @@ class Bridge:
             all_sessions.extend(host)
             logger.info("Host: %d sessions", len(host))
 
-        # Docker container tmux sessions
+        # Docker container tmux sessions (run in thread to avoid blocking event loop)
         if self.config.docker_socket:
-            docker = await self._collect_docker_sessions()
+            loop = asyncio.get_event_loop()
+            docker = await loop.run_in_executor(None, self._collect_docker_sessions_sync)
             all_sessions.extend(docker)
             logger.info("Docker: %d sessions", len(docker))
 
@@ -1144,10 +1155,11 @@ class Bridge:
         self._docker_socket_cache[cid] = (sockets, now)
         return sockets
 
-    async def _collect_docker_sessions(self) -> list[dict]:
+    def _collect_docker_sessions_sync(self) -> list[dict]:
         """Collect tmux sessions from Docker containers.
 
-        Uses docker-py to list containers and run tmux commands.
+        Runs in a thread executor to avoid blocking the event loop,
+        since docker-py makes synchronous HTTP calls.
         """
         if not self.config.docker_socket:
             return []
