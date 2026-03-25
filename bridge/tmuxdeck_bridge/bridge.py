@@ -720,7 +720,8 @@ class Bridge:
                 await self._write_file_docker(source, file_path, data)
             else:
                 resolved = self._host_path(file_path) if source == "host" else file_path
-                await self._write_file_local(resolved, data)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._write_file_local_sync, resolved, data)
 
             logger.info("file_write success: path=%s size=%d", file_path, len(data))
             await self._ws.send(json.dumps({
@@ -734,8 +735,9 @@ class Bridge:
                 "type": "file_write_result", "id": req_id, "error": str(e),
             }))
 
-    async def _write_file_local(self, file_path: str, data: bytes) -> None:
-        """Write a file to the local filesystem."""
+    @staticmethod
+    def _write_file_local_sync(file_path: str, data: bytes) -> None:
+        """Write a file to the local filesystem (runs in thread executor)."""
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(data)
@@ -761,10 +763,9 @@ class Bridge:
             error = stderr.decode("utf-8", errors="replace").strip()
             raise OSError(error or f"Failed to write {file_path}")
 
-    async def _read_file_local(self, source: str, file_path: str) -> tuple[bytes, str]:
-        """Read a file from local or host filesystem."""
-        # For host source, the file is still on the local filesystem
-        # (host source only affects tmux socket routing, not filesystem)
+    @staticmethod
+    def _read_file_sync(file_path: str) -> bytes:
+        """Read a file from local filesystem (runs in thread executor)."""
         if not os.path.isabs(file_path):
             raise ValueError(f"Path must be absolute: {file_path}")
         if not os.path.isfile(file_path):
@@ -775,9 +776,14 @@ class Bridge:
             raise ValueError(f"File too large ({size} bytes)")
 
         with open(file_path, "rb") as f:
-            data = f.read()
+            return f.read()
 
-        # Detect MIME type
+    async def _read_file_local(self, source: str, file_path: str) -> tuple[bytes, str]:
+        """Read a file from local or host filesystem."""
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._read_file_sync, file_path)
+
+        # Detect MIME type (async subprocess — already non-blocking)
         try:
             proc = await asyncio.create_subprocess_exec(
                 "file", "--mime-type", "-b", file_path,
