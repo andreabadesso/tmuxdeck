@@ -702,6 +702,24 @@ async def _bridge_terminal(
             except (asyncio.TimeoutError, Exception):
                 pass  # Best-effort, don't block attach on config failure
 
+        # Auto-rename windows with configurable format
+        from .. import store as _store
+        from ..services.tmux_manager import DEFAULT_AUTO_RENAME_FORMAT
+        _auto_fmt = _store.get_settings().get("tmuxAutoRenameFormat", "")
+        _auto_fmt = _auto_fmt if _auto_fmt else DEFAULT_AUTO_RENAME_FORMAT
+        for auto_cmd in [
+            ["tmux", "set-option", "-gw", "automatic-rename", "on"],
+            ["tmux", "set-option", "-gw", "automatic-rename-format", _auto_fmt],
+        ]:
+            try:
+                await conn.request({
+                    "type": "tmux_cmd",
+                    "cmd": auto_cmd,
+                    "source": source,
+                }, timeout=5)
+            except (asyncio.TimeoutError, Exception):
+                pass
+
         # Wait for initial RESIZE from frontend so bridge PTY starts
         # at the correct dimensions.
         cols, rows = 80, 24
