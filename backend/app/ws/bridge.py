@@ -55,35 +55,62 @@ async def _ping_loop(conn: BridgeConnection, interval: float = PING_INTERVAL) ->
         pass
 
 
-# Per-channel semaphore to bound concurrent forwards and preserve ordering
-_channel_semaphores: dict[int, asyncio.Semaphore] = {}
-_FORWARD_CONCURRENCY = 64
+# Per-channel forwarding queues — one consumer task per active channel.
+# Replaces per-frame asyncio.create_task() to reduce task-creation overhead
+# and guarantee frame ordering within a channel.
+_channel_queues: dict[int, asyncio.Queue] = {}
+_channel_tasks: dict[int, asyncio.Task] = {}
+_CHANNEL_QUEUE_SIZE = 256
 
 
-def _get_channel_semaphore(channel_id: int) -> asyncio.Semaphore:
-    sem = _channel_semaphores.get(channel_id)
-    if sem is None:
-        sem = asyncio.Semaphore(_FORWARD_CONCURRENCY)
-        _channel_semaphores[channel_id] = sem
-    return sem
-
-
-async def _forward_bytes(conn: BridgeConnection, channel_id: int, user_ws: WebSocket, data: bytes) -> None:
-    """Forward binary data to user WebSocket, with timeout to avoid blocking indefinitely."""
-    sem = _get_channel_semaphore(channel_id)
-    if sem.locked():
-        # All slots full — drop frame (backpressure) rather than queuing unbounded
+async def _channel_consumer(conn: BridgeConnection, channel_id: int, user_ws: WebSocket) -> None:
+    """Drain the per-channel queue and forward frames to the user WebSocket."""
+    queue = _channel_queues.get(channel_id)
+    if queue is None:
         return
-    async with sem:
+    try:
+        while True:
+            data = await queue.get()
+            if data is None:
+                break  # Poison pill — channel closed
+            try:
+                await asyncio.wait_for(user_ws.send_bytes(data), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Forward timeout on ch %d — dropping slow client", channel_id)
+                conn.unregister_terminal(channel_id)
+                break
+            except Exception:
+                conn.unregister_terminal(channel_id)
+                break
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _channel_queues.pop(channel_id, None)
+        _channel_tasks.pop(channel_id, None)
+
+
+def _ensure_channel(conn: BridgeConnection, channel_id: int, user_ws: WebSocket) -> asyncio.Queue:
+    """Get or create the forwarding queue and consumer task for a channel."""
+    queue = _channel_queues.get(channel_id)
+    if queue is None:
+        queue = asyncio.Queue(maxsize=_CHANNEL_QUEUE_SIZE)
+        _channel_queues[channel_id] = queue
+        task = asyncio.create_task(_channel_consumer(conn, channel_id, user_ws))
+        _channel_tasks[channel_id] = task
+    return queue
+
+
+def _cleanup_channel(channel_id: int) -> None:
+    """Stop forwarding for a channel."""
+    queue = _channel_queues.pop(channel_id, None)
+    if queue is not None:
         try:
-            await asyncio.wait_for(user_ws.send_bytes(data), timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning("Forward timeout on ch %d — dropping slow client", channel_id)
-            conn.unregister_terminal(channel_id)
-            _channel_semaphores.pop(channel_id, None)
-        except Exception:
-            conn.unregister_terminal(channel_id)
-            _channel_semaphores.pop(channel_id, None)
+            queue.put_nowait(None)  # Poison pill
+        except asyncio.QueueFull:
+            pass
+    task = _channel_tasks.pop(channel_id, None)
+    if task is not None:
+        task.cancel()
 
 
 async def _bridge_cleanup_timer(
@@ -210,11 +237,15 @@ async def bridge_ws(websocket: WebSocket):
                 _rx_bin_frames += 1
                 _rx_bin_bytes += len(data) - 2
                 channel_id = struct.unpack(">H", data[:2])[0]
-                payload = bytes(data[2:])
+                payload = data[2:]
                 user_ws = conn.get_terminal_ws(channel_id)
                 if user_ws:
                     _fwd_tasks += 1
-                    asyncio.create_task(_forward_bytes(conn, channel_id, user_ws, payload))
+                    queue = _ensure_channel(conn, channel_id, user_ws)
+                    try:
+                        queue.put_nowait(bytes(payload))
+                    except asyncio.QueueFull:
+                        pass  # Backpressure: drop frame rather than blocking
 
             # Text frame: JSON control message
             elif "text" in message and message["text"]:
@@ -317,10 +348,10 @@ async def bridge_ws(websocket: WebSocket):
             ping_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await ping_task
-        # Clean up per-channel semaphores for this bridge
+        # Clean up per-channel forwarding queues for this bridge
         if conn:
             for ch_id in list(conn._terminal_relays):
-                _channel_semaphores.pop(ch_id, None)
+                _cleanup_channel(ch_id)
         if conn and conn.has_terminals():
             # Bridge disconnected but terminals are active — keep conn alive
             conn.set_disconnected()

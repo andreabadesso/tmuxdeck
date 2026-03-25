@@ -745,13 +745,15 @@ async def _bridge_terminal(
                     if text.startswith("SELECT_WINDOW:"):
                         try:
                             win_idx = int(text.split(":", 1)[1])
-                            await conn.request({
+                            # Fire-and-forget: no need to wait for response,
+                            # the PTY output will show the window change
+                            await conn.send_json({
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "select-window", "-t",
                                          f"{session_name}:{win_idx}"],
                                 "source": source,
                             })
-                        except (ValueError, asyncio.TimeoutError, Exception) as e:
+                        except (ValueError, Exception) as e:
                             logger.debug("Bridge select-window failed: %s", e)
                         continue
                     if text.startswith("SCROLL:"):
@@ -760,84 +762,30 @@ async def _bridge_terminal(
                             direction = parts[1] if len(parts) > 1 else ""
                             count = parts[2] if len(parts) > 2 else "3"
                             scroll_type = parts[3] if len(parts) > 3 else "line"
-                            # Check if pane is in alternate screen (vim, less, etc.)
-                            alt_resp = await conn.request({
-                                "type": "tmux_cmd",
-                                "cmd": ["tmux", "display-message", "-p",
-                                         "-t", session_name, "#{alternate_on}"],
+                            # Fire-and-forget scroll commands to avoid
+                            # round-trip latency.  The bridge handles alt-screen
+                            # detection and sends the right tmux command.
+                            await conn.send_json({
+                                "type": "scroll",
+                                "session_name": session_name,
+                                "direction": direction,
+                                "count": count,
+                                "scroll_type": scroll_type,
                                 "source": source,
                             })
-                            alt = alt_resp.get("output", "").strip() == "1"
-                            if direction == "up":
-                                if alt:
-                                    key = "PPage" if scroll_type == "page" else "Up"
-                                    cmd = ["tmux", "send-keys",
-                                           "-t", session_name]
-                                    if scroll_type != "page":
-                                        cmd += ["-N", count]
-                                    cmd.append(key)
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": cmd,
-                                        "source": source,
-                                    })
-                                else:
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": ["tmux", "copy-mode", "-e",
-                                                 "-t", session_name],
-                                        "source": source,
-                                    })
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": ["tmux", "send-keys",
-                                                 "-t", session_name,
-                                                 "-X", "-N", count, "scroll-up"],
-                                        "source": source,
-                                    })
-                            elif direction == "down":
-                                if alt:
-                                    key = "NPage" if scroll_type == "page" else "Down"
-                                    cmd = ["tmux", "send-keys",
-                                           "-t", session_name]
-                                    if scroll_type != "page":
-                                        cmd += ["-N", count]
-                                    cmd.append(key)
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": cmd,
-                                        "source": source,
-                                    })
-                                else:
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": ["tmux", "send-keys",
-                                                 "-t", session_name,
-                                                 "-X", "-N", count, "scroll-down"],
-                                        "source": source,
-                                    })
-                            elif direction == "exit":
-                                if not alt:
-                                    await conn.request({
-                                        "type": "tmux_cmd",
-                                        "cmd": ["tmux", "send-keys",
-                                                 "-t", session_name,
-                                                 "-X", "cancel"],
-                                        "source": source,
-                                    })
-                        except (ValueError, asyncio.TimeoutError, Exception) as e:
+                        except (ValueError, Exception) as e:
                             logger.debug("Bridge scroll failed: %s", e)
                         continue
                     if text == "SHIFT_ENTER:":
                         try:
-                            await conn.request({
+                            await conn.send_json({
                                 "type": "tmux_cmd",
                                 "cmd": ["tmux", "send-keys", "-l",
                                          "-t", session_name, "--",
                                          "\x1b[13;2u"],
                                 "source": source,
                             })
-                        except (ValueError, asyncio.TimeoutError, Exception) as e:
+                        except Exception as e:
                             logger.debug("Bridge shift-enter failed: %s", e)
                         continue
                     if text == "DISABLE_MOUSE:":

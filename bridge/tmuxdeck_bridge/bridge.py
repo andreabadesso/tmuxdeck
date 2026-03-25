@@ -385,25 +385,40 @@ class Bridge:
         if terminal:
             terminal.write(payload)
 
+    def _safe_task(self, coro) -> None:
+        """Create a background task with error logging."""
+        task = asyncio.create_task(coro)
+        task.add_done_callback(self._task_done)
+
+    @staticmethod
+    def _task_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Background task failed: %s", exc)
+
     async def _handle_json(self, msg: dict) -> None:
         """Handle a JSON control message from backend."""
         self._ws_stats["rx_text_frames"] += 1
         msg_type = msg.get("type", "")
 
         if msg_type == "attach":
-            asyncio.create_task(self._handle_attach(msg))
+            self._safe_task(self._handle_attach(msg))
         elif msg_type == "detach":
             await self._handle_detach(msg)
         elif msg_type == "resize":
             self._handle_resize(msg)
+        elif msg_type == "scroll":
+            self._safe_task(self._handle_scroll(msg))
         elif msg_type == "tmux_cmd":
-            asyncio.create_task(self._handle_tmux_cmd(msg))
+            self._safe_task(self._handle_tmux_cmd(msg))
         elif msg_type == "list_sessions":
-            asyncio.create_task(self._handle_list_sessions())
+            self._safe_task(self._handle_list_sessions())
         elif msg_type == "file_read":
-            asyncio.create_task(self._handle_file_read(msg))
+            self._safe_task(self._handle_file_read(msg))
         elif msg_type == "file_write":
-            asyncio.create_task(self._handle_file_write(msg))
+            self._safe_task(self._handle_file_write(msg))
         elif msg_type == "settings":
             await self._apply_settings(msg.get("settings", {}))
         elif msg_type == "ping":
@@ -514,6 +529,78 @@ class Bridge:
         terminal = self._terminals.get(channel_id)
         if terminal:
             terminal.resize(cols, rows)
+
+    async def _run_tmux(self, cmd: list[str], source: str = "", session_name: str = "") -> str | None:
+        """Run a tmux command, return stdout or None on error. Fire-and-forget safe."""
+        resolved_source = source or "local"
+        tmux_socket = self._name_to_docker_socket.get(session_name)
+        full_cmd = self._build_cmd_for_source(cmd, resolved_source, tmux_socket=tmux_socket)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *full_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode("utf-8", errors="replace") if proc.returncode == 0 else None
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.debug("tmux cmd failed (%s): %s", cmd[:3], e)
+            return None
+
+    async def _handle_scroll(self, msg: dict) -> None:
+        """Handle scroll command with local alt-screen detection (no round-trip)."""
+        session_name = msg.get("session_name", "")
+        direction = msg.get("direction", "")
+        count = msg.get("count", "3")
+        scroll_type = msg.get("scroll_type", "line")
+        source = self._resolve_source(msg, session_name)
+
+        # Check alternate screen locally — no round-trip to backend
+        alt_out = await self._run_tmux(
+            ["tmux", "display-message", "-p", "-t", session_name, "#{alternate_on}"],
+            source, session_name,
+        )
+        alt = (alt_out or "").strip() == "1"
+
+        if direction == "up":
+            if alt:
+                key = "PPage" if scroll_type == "page" else "Up"
+                cmd = ["tmux", "send-keys", "-t", session_name]
+                if scroll_type != "page":
+                    cmd += ["-N", count]
+                cmd.append(key)
+                await self._run_tmux(cmd, source, session_name)
+            else:
+                await self._run_tmux(
+                    ["tmux", "copy-mode", "-e", "-t", session_name],
+                    source, session_name,
+                )
+                await self._run_tmux(
+                    ["tmux", "send-keys", "-t", session_name,
+                     "-X", "-N", count, "scroll-up"],
+                    source, session_name,
+                )
+        elif direction == "down":
+            if alt:
+                key = "NPage" if scroll_type == "page" else "Down"
+                cmd = ["tmux", "send-keys", "-t", session_name]
+                if scroll_type != "page":
+                    cmd += ["-N", count]
+                cmd.append(key)
+                await self._run_tmux(cmd, source, session_name)
+            else:
+                await self._run_tmux(
+                    ["tmux", "send-keys", "-t", session_name,
+                     "-X", "-N", count, "scroll-down"],
+                    source, session_name,
+                )
+        elif direction == "exit":
+            if not alt:
+                await self._run_tmux(
+                    ["tmux", "send-keys", "-t", session_name,
+                     "-X", "cancel"],
+                    source, session_name,
+                )
 
     async def _handle_tmux_cmd(self, msg: dict) -> None:
         """Run a tmux command and return the result."""
