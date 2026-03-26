@@ -26,6 +26,7 @@ interface TerminalProps {
   onReady?: () => void;
   onSessionGone?: () => void;
   onActiveWindowChanged?: (sessionName: string, windowIndex: number) => void;
+  onWindowsChanged?: (sessionName: string, windows: import('../types').TmuxWindow[]) => void;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -132,6 +133,7 @@ function connectWebSocket(
   onFirstData?: () => void,
   onSessionGone?: () => void,
   onActiveWindowChanged?: (sessionName: string, windowIndex: number) => void,
+  onWindowsChanged?: (sessionName: string, windows: import('../types').TmuxWindow[]) => void,
   windowIndexRef?: { current: number },
 ): { ws: WebSocket; close: () => void } {
   const ws = new WebSocket(wsUrl);
@@ -195,6 +197,9 @@ function connectWebSocket(
             if (windowIndexRef) windowIndexRef.current = active;
             onActiveWindowChanged(session, active);
           }
+          if (typeof session === 'string' && Array.isArray(state.windows) && onWindowsChanged) {
+            onWindowsChanged(session, state.windows);
+          }
         } catch { /* ignore malformed */ }
         return;
       }
@@ -233,6 +238,7 @@ function setupWebSocketTerminal(
   onFirstData?: () => void,
   onSessionGone?: () => void,
   onActiveWindowChangedGetter?: () => ((sessionName: string, windowIndex: number) => void) | undefined,
+  onWindowsChangedGetter?: () => ((sessionName: string, windows: import('../types').TmuxWindow[]) => void) | undefined,
 ): { cleanup: () => void; inScrollMode: { current: boolean } } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -477,6 +483,7 @@ function setupWebSocketTerminal(
       () => { receivedData = true; onFirstData?.(); },
       () => { if (!sessionGone) markSessionGone(); },
       onActiveWindowChangedGetter ? (session: string, idx: number) => onActiveWindowChangedGetter()?.(session, idx) : undefined,
+      onWindowsChangedGetter ? (session: string, windows: import('../types').TmuxWindow[]) => onWindowsChangedGetter()?.(session, windows) : undefined,
       windowIndexRef,
     );
     currentClose = close;
@@ -612,7 +619,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone, onActiveWindowChanged }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone, onActiveWindowChanged, onWindowsChanged }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -632,6 +639,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   onSessionGoneRef.current = onSessionGone;
   const onActiveWindowChangedRef = useRef(onActiveWindowChanged);
   onActiveWindowChangedRef.current = onActiveWindowChanged;
+  const onWindowsChangedRef = useRef(onWindowsChanged);
+  onWindowsChangedRef.current = onWindowsChanged;
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
@@ -813,7 +822,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (IS_MOCK) {
       setupMockTerminal(term, containerId, sessionName);
     } else {
-      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.(), () => onSessionGoneRef.current?.(), () => onActiveWindowChangedRef.current ?? undefined);
+      const { cleanup, inScrollMode } = setupWebSocketTerminal(term, fitAddon, containerId, sessionName, windowIndexRef.current, setMouseWarning, setBellWarning, wsRef, windowIndexRef, osc52TextRef, () => onReadyRef.current?.(), () => onSessionGoneRef.current?.(), () => onActiveWindowChangedRef.current ?? undefined, () => onWindowsChangedRef.current ?? undefined);
       inScrollModeRef.current = inScrollMode;
       // Store cleanup for unmount
       (wrapper as unknown as Record<string, () => void>).__wsCleanup = cleanup;

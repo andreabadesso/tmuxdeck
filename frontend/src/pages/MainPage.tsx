@@ -15,7 +15,7 @@ import { useSessionExpandedState } from '../hooks/useSessionExpandedState';
 import { useContainerExpandedState } from '../hooks/useContainerExpandedState';
 import { api } from '../api/client';
 import { logout } from '../api/httpClient';
-import type { SessionTarget, Selection, FoldedSessionTarget, FoldedContainerTarget, Container, ContainerListResponse, Settings, ClaudeNotification } from '../types';
+import type { SessionTarget, Selection, FoldedSessionTarget, FoldedContainerTarget, Container, ContainerListResponse, Settings, ClaudeNotification, TmuxWindow } from '../types';
 import { isWindowSelection, isFoldedSelection, isFoldedContainerSelection } from '../types';
 import { sortSessionsByOrder } from '../utils/sessionOrder';
 import { DEFAULT_HOTKEYS, matchesBinding, matchesDoublePressKey } from '../utils/hotkeys';
@@ -261,6 +261,26 @@ export function MainPage() {
       return prev;
     });
   }, [pool]);
+
+  // Update sidebar window state (activity/bell flags) from terminal polling
+  const handleWindowsChanged = useCallback((containerId: string, sessionName: string, windows: TmuxWindow[]) => {
+    queryClient.setQueryData<ContainerListResponse>(['containers'], (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        containers: old.containers.map((c) => {
+          if (c.id !== containerId) return c;
+          return {
+            ...c,
+            sessions: c.sessions.map((s) => {
+              if (s.name !== sessionName) return s;
+              return { ...s, windows };
+            }),
+          };
+        }),
+      };
+    });
+  }, [queryClient]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -764,6 +784,7 @@ export function MainPage() {
             activeKey={activeKey}
             onOpenFile={(containerId, path) => setViewingFile({ containerId, path })}
             onActiveWindowChanged={handleActiveWindowChanged}
+            onWindowsChanged={handleWindowsChanged}
           />
           {isFoldedContainer && isFoldedContainerSelection(displayedSession!) && (
             <div className="absolute inset-0 z-20">

@@ -72,7 +72,7 @@ class TmuxManager:
             cls._instance = cls()
         return cls._instance
 
-    async def _run_cmd(self, container_id: str, cmd: list[str]) -> str:
+    async def _run_cmd(self, container_id: str, cmd: list[str], timeout: float = 5.0) -> str:
         """Run a command locally, on the host via socket, via bridge, or via docker exec."""
         if _is_local(container_id):
             proc = await asyncio.create_subprocess_exec(
@@ -80,7 +80,11 @@ class TmuxManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                proc.kill()
+                raise RuntimeError(f"tmux command timed out after {timeout}s: {cmd}")
             return stdout.decode("utf-8", errors="replace")
         if _is_host(container_id):
             socket = config.host_tmux_socket
@@ -91,7 +95,11 @@ class TmuxManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                proc.kill()
+                raise RuntimeError(f"tmux command timed out after {timeout}s: {host_cmd}")
             return stdout.decode("utf-8", errors="replace")
         if _is_bridge(container_id):
             bm = BridgeManager.get()

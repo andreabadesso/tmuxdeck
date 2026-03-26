@@ -595,38 +595,54 @@ async def _pty_terminal(
         the frontend, and query_session is the tmux session to query
         for list_windows/list_panes.
         """
-        client_pid = str(proc.pid)
-        lc = await asyncio.create_subprocess_exec(
-            *tmux_prefix, "list-clients",
-            "-F", "#{client_pid}|#{client_session}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-            env=_clean_env(),
-        )
-        stdout, _ = await lc.communicate()
-        client_session: str | None = None
-        for line in stdout.decode().strip().splitlines():
-            parts = line.split("|", 1)
-            if len(parts) == 2 and parts[0] == client_pid:
-                client_session = parts[1]
-                break
-        if not client_session:
-            # Client not found — fall back to view session
-            return (original_session or session_name, session_name)
-        # If client is on a view session, resolve to the real session
-        # via session_group
-        if client_session.startswith(VIEW_SESSION_PREFIX):
-            dm = await asyncio.create_subprocess_exec(
-                *tmux_prefix, "display-message", "-p",
-                "-t", client_session, "#{session_group}",
+        _fallback = (original_session or session_name, session_name)
+        _CMD_TIMEOUT = 5.0
+        try:
+            client_pid = str(proc.pid)
+            lc = await asyncio.create_subprocess_exec(
+                *tmux_prefix, "list-clients",
+                "-F", "#{client_pid}|#{client_session}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=_clean_env(),
             )
-            sg_out, _ = await dm.communicate()
-            group = sg_out.decode().strip()
-            return (group or client_session, client_session)
-        return (client_session, client_session)
+            try:
+                stdout, _ = await asyncio.wait_for(lc.communicate(), timeout=_CMD_TIMEOUT)
+            except asyncio.TimeoutError:
+                lc.kill()
+                logger.warning("tmux list-clients timed out after %ss", _CMD_TIMEOUT)
+                return _fallback
+            client_session: str | None = None
+            for line in stdout.decode().strip().splitlines():
+                parts = line.split("|", 1)
+                if len(parts) == 2 and parts[0] == client_pid:
+                    client_session = parts[1]
+                    break
+            if not client_session:
+                # Client not found — fall back to view session
+                return _fallback
+            # If client is on a view session, resolve to the real session
+            # via session_group
+            if client_session.startswith(VIEW_SESSION_PREFIX):
+                dm = await asyncio.create_subprocess_exec(
+                    *tmux_prefix, "display-message", "-p",
+                    "-t", client_session, "#{session_group}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=_clean_env(),
+                )
+                try:
+                    sg_out, _ = await asyncio.wait_for(dm.communicate(), timeout=_CMD_TIMEOUT)
+                except asyncio.TimeoutError:
+                    dm.kill()
+                    logger.warning("tmux display-message timed out after %ss", _CMD_TIMEOUT)
+                    return _fallback
+                group = sg_out.decode().strip()
+                return (group or client_session, client_session)
+            return (client_session, client_session)
+        except OSError as e:
+            logger.warning("_resolve_client_session failed: %s", e)
+            return _fallback
 
     async def poll_window_state() -> None:
         """Periodically check tmux window state and notify the frontend."""
