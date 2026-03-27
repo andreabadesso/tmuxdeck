@@ -119,6 +119,7 @@ export interface Settings {
   hotkeys?: Record<string, string>;
   snapshotEnabled?: boolean;
   tmuxAutoRenameFormat?: string;
+  followTmux?: boolean;
 }
 
 export interface ClaudeNotification {

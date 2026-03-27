@@ -29,6 +29,7 @@ export function SettingsPage() {
   const [sshKeyPath, setSshKeyPath] = useState('');
   const [terminalPoolSize, setTerminalPoolSize] = useState(8);
   const [snapshotEnabled, setSnapshotEnabled] = useState(true);
+  const [followTmux, setFollowTmux] = useState(false);
   const [tmuxAutoRenameFormat, setTmuxAutoRenameFormat] = useState('');
   const [naturalTouchScroll, setNaturalTouchScroll] = useState(() => getNaturalTouchScroll());
   const [isDirty, setIsDirty] = useState(false);
@@ -41,6 +42,7 @@ export function SettingsPage() {
     setSshKeyPath(settings.sshKeyPath);
     setTerminalPoolSize(settings.terminalPoolSize ?? 8);
     setSnapshotEnabled(settings.snapshotEnabled ?? true);
+    setFollowTmux(settings.followTmux ?? false);
     setTmuxAutoRenameFormat(settings.tmuxAutoRenameFormat ?? '');
     setIsDirty(false);
   }
@@ -52,6 +54,7 @@ export function SettingsPage() {
         sshKeyPath,
         terminalPoolSize,
         snapshotEnabled,
+        followTmux,
         tmuxAutoRenameFormat,
       }),
     onSuccess: () => {
@@ -209,6 +212,30 @@ export function SettingsPage() {
               <span className="text-sm text-gray-200">Enable snapshots</span>
               <p className="text-xs text-gray-600">
                 Periodically save tmux session tree for restoring killed/lost sessions
+              </p>
+            </div>
+          </label>
+        </section>
+
+        {/* Tmux Section */}
+        <section>
+          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
+            Tmux
+          </h2>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={followTmux}
+              onChange={(e) => {
+                setFollowTmux(e.target.checked);
+                markDirty();
+              }}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+            />
+            <div>
+              <span className="text-sm text-gray-200">Follow tmux state</span>
+              <p className="text-xs text-gray-600">
+                Auto-switch the sidebar selection when tmux windows or sessions change from the terminal
               </p>
             </div>
           </label>

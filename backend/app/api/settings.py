@@ -33,6 +33,7 @@ def _to_response(data: dict) -> SettingsResponse:
         telegram_voice_notifications=data.get("telegramVoiceNotifications", False),
         hotkeys={**_DEFAULT_HOTKEYS, **data.get("hotkeys", {})},
         tmux_auto_rename_format=data.get("tmuxAutoRenameFormat", ""),
+        follow_tmux=data.get("followTmux", False),
     )
 
 

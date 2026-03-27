@@ -5,7 +5,6 @@ import { TerminalPool } from '../components/TerminalPool';
 import type { TerminalPoolHandle } from '../components/TerminalPool';
 import { SessionSwitcher } from '../components/SessionSwitcher';
 import { KeyboardHelp } from '../components/KeyboardHelp';
-import { FileViewer } from '../components/FileViewer';
 import { FoldedSessionPreview } from '../components/FoldedSessionPreview';
 import { Monitor, Maximize2, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../components/ToastContainer';
@@ -116,7 +115,6 @@ export function MainPage() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [recentIds, setRecentIds] = useState<string[]>([]);
-  const [viewingFile, setViewingFile] = useState<{ containerId: string; path: string } | null>(null);
   const poolRef = useRef<TerminalPoolHandle>(null);
   const previewTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const clearTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -134,6 +132,7 @@ export function MainPage() {
     queryFn: () => api.getSettings(),
   });
   const poolSize = (settings as Settings | undefined)?.terminalPoolSize ?? 8;
+  const followTmux = (settings as Settings | undefined)?.followTmux ?? false;
 
   const pool = useTerminalPool({ maxSize: poolSize, idleTimeoutMs: 60_000 });
 
@@ -248,6 +247,7 @@ export function MainPage() {
 
   // Follow tmux window/session changes initiated from the terminal (e.g. C-B N, C-B S)
   const handleActiveWindowChanged = useCallback((containerId: string, sessionName: string, windowIndex: number) => {
+    if (!followTmux) return;
     setSelectedSession((prev) => {
       if (
         prev &&
@@ -260,7 +260,7 @@ export function MainPage() {
       }
       return prev;
     });
-  }, [pool]);
+  }, [pool, followTmux]);
 
   // Update sidebar window state (activity/bell flags) from terminal polling
   const handleWindowsChanged = useCallback((containerId: string, sessionName: string, windows: TmuxWindow[]) => {
@@ -782,7 +782,6 @@ export function MainPage() {
             ref={poolRef}
             entries={pool.entries}
             activeKey={activeKey}
-            onOpenFile={(containerId, path) => setViewingFile({ containerId, path })}
             onActiveWindowChanged={handleActiveWindowChanged}
             onWindowsChanged={handleWindowsChanged}
           />
@@ -893,13 +892,6 @@ export function MainPage() {
 
       {helpOpen && <KeyboardHelp onClose={() => setHelpOpen(false)} hotkeys={hotkeys} />}
 
-      {viewingFile && (
-        <FileViewer
-          containerId={viewingFile.containerId}
-          path={viewingFile.path}
-          onClose={() => { setViewingFile(null); requestAnimationFrame(() => poolRef.current?.focusActive()); }}
-        />
-      )}
     </div>
   );
 }

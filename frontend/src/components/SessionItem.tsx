@@ -547,7 +547,7 @@ export function SessionItem({
                 onDragOver={(e) => handleWindowDragOver(e, win.index)}
                 onDragLeave={handleWindowDragLeave}
                 onDrop={(e) => handleWindowDrop(e, win.index)}
-                className={`flex items-center group px-2 py-0.5 cursor-pointer rounded-sm transition-colors ${
+                className={`flex items-center group px-2 py-0.5 h-6 cursor-pointer rounded-sm transition-colors ${
                   isDragged ? 'opacity-50' : ''
                 } ${
                   isDropTarget ? 'border-t-2 border-blue-500' : 'border-t-2 border-transparent'

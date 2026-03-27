@@ -174,6 +174,7 @@ class SettingsResponse(CamelModel):
     hotkeys: dict[str, str]
     snapshot_enabled: bool = True
     tmux_auto_rename_format: str = ""
+    follow_tmux: bool = False
 
 
 class UpdateSettingsRequest(CamelModel):
@@ -191,6 +192,7 @@ class UpdateSettingsRequest(CamelModel):
     hotkeys: dict[str, str] | None = None
     snapshot_enabled: bool | None = None
     tmux_auto_rename_format: str | None = None
+    follow_tmux: bool | None = None
 
 
 # --- Notifications ---

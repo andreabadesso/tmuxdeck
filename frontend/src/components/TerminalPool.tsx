@@ -1,8 +1,9 @@
-import { forwardRef, useImperativeHandle, useState, useEffect, useCallback, createRef } from 'react';
+import { Fragment, forwardRef, useImperativeHandle, useState, useEffect, useCallback, createRef } from 'react';
 import { Terminal } from './Terminal';
 import type { TerminalHandle } from './Terminal';
 import type { PoolEntry } from '../hooks/useTerminalPool';
 import { Loader2 } from 'lucide-react';
+import { FileViewer } from './FileViewer';
 
 export interface TerminalPoolHandle {
   focusActive: () => void;
@@ -13,15 +14,16 @@ export interface TerminalPoolHandle {
 interface TerminalPoolProps {
   entries: PoolEntry[];
   activeKey: string | null;
-  onOpenFile?: (containerId: string, path: string) => void;
   onActiveWindowChanged?: (containerId: string, sessionName: string, windowIndex: number) => void;
   onWindowsChanged?: (containerId: string, sessionName: string, windows: import('../types').TmuxWindow[]) => void;
 }
 
 export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
-  function TerminalPool({ entries, activeKey, onOpenFile, onActiveWindowChanged, onWindowsChanged }, ref) {
+  function TerminalPool({ entries, activeKey, onActiveWindowChanged, onWindowsChanged }, ref) {
     // Use useState with lazy init to hold the refs map — avoids useRef.current access during render
     const [refsMap] = useState(() => new Map<string, React.RefObject<TerminalHandle | null>>());
+    // Per-terminal file viewing state
+    const [viewingFiles, setViewingFiles] = useState(() => new Map<string, { containerId: string; path: string }>());
     // Track which terminals have received their first data
     const [readyKeys, setReadyKeys] = useState<Set<string>>(() => new Set());
     // Track which terminals have been detected as gone (session removed)
@@ -65,6 +67,21 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
           }
         }
         return changed ? next : prev;
+      });
+      setViewingFiles(prev => {
+        let changed = false;
+        for (const key of prev.keys()) {
+          if (!currentKeys.has(key)) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return prev;
+        const next = new Map(prev);
+        for (const key of next.keys()) {
+          if (!currentKeys.has(key)) next.delete(key);
+        }
+        return next;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entries]);
@@ -125,39 +142,67 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
         {entries.map((entry) => {
           const isActive = entry.key === activeKey;
           return (
-            <div
-              key={`${entry.key}::${genMap.get(entry.key) ?? 0}`}
-              className="absolute inset-0"
-              style={{
-                visibility: isActive ? 'visible' : 'hidden',
-                zIndex: isActive ? 10 : 0,
-                pointerEvents: isActive ? 'auto' : 'none',
-              }}
-            >
-              <Terminal
-                ref={refsMap.get(entry.key)}
-                containerId={entry.containerId}
-                sessionName={entry.sessionName}
-                windowIndex={entry.windowIndex}
-                autoFocus={false}
-                visible={isActive}
-                onOpenFile={onOpenFile ? (path) => onOpenFile(entry.containerId, path) : undefined}
-                onActiveWindowChanged={isActive && onActiveWindowChanged ? (session, idx) => onActiveWindowChanged(entry.containerId, session, idx) : undefined}
-                onWindowsChanged={isActive && onWindowsChanged ? (session, windows) => onWindowsChanged(entry.containerId, session, windows) : undefined}
-                onReady={() => setReadyKeys(prev => {
-                  if (prev.has(entry.key)) return prev;
-                  const next = new Set(prev);
-                  next.add(entry.key);
-                  return next;
-                })}
-                onSessionGone={() => setGoneKeys(prev => {
-                  if (prev.has(entry.key)) return prev;
-                  const next = new Set(prev);
-                  next.add(entry.key);
-                  return next;
-                })}
-              />
-            </div>
+            <Fragment key={`${entry.key}::${genMap.get(entry.key) ?? 0}`}>
+              <div
+                className="absolute inset-0"
+                style={{
+                  visibility: isActive ? 'visible' : 'hidden',
+                  zIndex: isActive ? 10 : 0,
+                  pointerEvents: isActive ? 'auto' : 'none',
+                }}
+              >
+                <Terminal
+                  ref={refsMap.get(entry.key)}
+                  containerId={entry.containerId}
+                  sessionName={entry.sessionName}
+                  windowIndex={entry.windowIndex}
+                  autoFocus={false}
+                  visible={isActive}
+                  onOpenFile={(path) => setViewingFiles(prev => {
+                    const next = new Map(prev);
+                    next.set(entry.key, { containerId: entry.containerId, path });
+                    return next;
+                  })}
+                  onActiveWindowChanged={isActive && onActiveWindowChanged ? (session, idx) => onActiveWindowChanged(entry.containerId, session, idx) : undefined}
+                  onWindowsChanged={isActive && onWindowsChanged ? (session, windows) => onWindowsChanged(entry.containerId, session, windows) : undefined}
+                  onReady={() => setReadyKeys(prev => {
+                    if (prev.has(entry.key)) return prev;
+                    const next = new Set(prev);
+                    next.add(entry.key);
+                    return next;
+                  })}
+                  onSessionGone={() => setGoneKeys(prev => {
+                    if (prev.has(entry.key)) return prev;
+                    const next = new Set(prev);
+                    next.add(entry.key);
+                    return next;
+                  })}
+                />
+              </div>
+              {viewingFiles.has(entry.key) && (
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    display: isActive ? undefined : 'none',
+                    zIndex: 30,
+                  }}
+                >
+                  <FileViewer
+                    containerId={viewingFiles.get(entry.key)!.containerId}
+                    path={viewingFiles.get(entry.key)!.path}
+                    active={isActive}
+                    onClose={() => {
+                      setViewingFiles(prev => {
+                        const next = new Map(prev);
+                        next.delete(entry.key);
+                        return next;
+                      });
+                      requestAnimationFrame(() => refsMap.get(entry.key)?.current?.focus());
+                    }}
+                  />
+                </div>
+              )}
+            </Fragment>
           );
         })}
         {showLoading && (

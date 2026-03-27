@@ -13,6 +13,7 @@ interface FileViewerProps {
   containerId: string;
   path: string;
   onClose: () => void;
+  active?: boolean;
 }
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -22,7 +23,7 @@ type ViewerState =
   | { status: 'error'; message: string }
   | { status: 'ready'; renderer: SubRenderer; content?: string; url: string; mime: string };
 
-export function FileViewer({ containerId, path, onClose }: FileViewerProps) {
+export function FileViewer({ containerId, path, onClose, active = true }: FileViewerProps) {
   const [state, setState] = useState<ViewerState>({ status: 'loading' });
   const [rawMode, setRawMode] = useState(false);
 
@@ -93,9 +94,10 @@ export function FileViewer({ containerId, path, onClose }: FileViewerProps) {
   }, [onClose]);
 
   useEffect(() => {
+    if (!active) return;
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleKeyDown]);
+  }, [handleKeyDown, active]);
 
   const handleOpenInNewTab = () => {
     window.open(fileUrl, '_blank');
@@ -124,7 +126,7 @@ export function FileViewer({ containerId, path, onClose }: FileViewerProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
       <div
         className={`bg-gray-900 border border-gray-700 rounded-xl shadow-2xl flex flex-col ${getModalSizeClass()}`}
         onClick={(e) => e.stopPropagation()}
