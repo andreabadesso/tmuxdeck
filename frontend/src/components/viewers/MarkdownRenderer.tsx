@@ -59,7 +59,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           [&_.md-h5]:text-base [&_.md-h5]:font-semibold [&_.md-h5]:mb-1 [&_.md-h5]:mt-2
           [&_.md-h6]:text-sm [&_.md-h6]:font-semibold [&_.md-h6]:mb-1 [&_.md-h6]:mt-2
           [&_p]:mb-3 [&_p]:leading-relaxed [&_p]:text-gray-300
-          [&_.md-code-block]:bg-gray-800 [&_.md-code-block]:rounded-lg [&_.md-code-block]:p-4 [&_.md-code-block]:my-4 [&_.md-code-block]:overflow-x-auto [&_.md-code-block]:text-sm [&_.md-code-block]:text-gray-300 [&_.md-code-block]:font-mono
+          [&_.md-code-block]:bg-gray-800 [&_.md-code-block]:rounded-lg [&_.md-code-block]:p-4 [&_.md-code-block]:my-4 [&_.md-code-block]:overflow-x-auto [&_.md-code-block]:text-sm [&_.md-code-block]:text-gray-300 [&_.md-code-block]:font-mono [&_.md-code-block]:whitespace-pre-wrap
           [&_.md-inline-code]:bg-gray-800 [&_.md-inline-code]:rounded [&_.md-inline-code]:px-1.5 [&_.md-inline-code]:py-0.5 [&_.md-inline-code]:text-sm [&_.md-inline-code]:text-pink-400 [&_.md-inline-code]:font-mono
           [&_.md-code-block_.md-inline-code]:text-gray-300 [&_.md-code-block_.md-inline-code]:bg-transparent [&_.md-code-block_.md-inline-code]:p-0
           [&_.md-link]:text-blue-400 [&_.md-link]:underline [&_.md-link]:hover:text-blue-300
