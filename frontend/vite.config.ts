@@ -11,14 +11,16 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Never cache API or WebSocket requests — only static assets
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-            },
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https?:\/\/.*\/ws\//,
+            handler: 'NetworkOnly',
           },
         ],
       },
