@@ -21,15 +21,28 @@ class DockerManager:
     dispatched via ``asyncio.to_thread``."""
 
     _instance: DockerManager | None = None
+    _unavailable: bool = False
 
     def __init__(self) -> None:
         self._client = docker.DockerClient(base_url=f"unix://{config.docker_socket}")
 
     @classmethod
     def get(cls) -> DockerManager:
+        if cls._unavailable:
+            raise docker.errors.DockerException("Docker previously unavailable (cached)")
         if cls._instance is None:
-            cls._instance = cls()
+            try:
+                cls._instance = cls()
+            except Exception:
+                cls._unavailable = True
+                raise
         return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Allow retrying Docker connection (e.g. after Docker starts)."""
+        cls._instance = None
+        cls._unavailable = False
 
     # --- helpers --------------------------------------------------------
 
