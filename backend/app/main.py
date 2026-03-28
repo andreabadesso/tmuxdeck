@@ -87,6 +87,32 @@ async def _start_telegram_bot() -> object | None:
         return None
 
 
+async def _cleanup_stale_view_sessions() -> None:
+    """Kill any _view_ tmux sessions left over from previous server runs."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "tmux", "list-sessions", "-F", "#{session_name}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        stale = [
+            s for s in stdout.decode().strip().splitlines()
+            if s.startswith("_view_")
+        ]
+        for name in stale:
+            kill = await asyncio.create_subprocess_exec(
+                "tmux", "kill-session", "-t", name,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await kill.wait()
+        if stale:
+            logger.info("Cleaned up %d stale _view_ sessions", len(stale))
+    except Exception:
+        logger.debug("Could not clean up stale view sessions", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure data directories exist
@@ -97,6 +123,9 @@ async def lifespan(app: FastAPI):
     # so we need enough headroom beyond the number of open terminals.
     executor = ThreadPoolExecutor(max_workers=64)
     asyncio.get_running_loop().set_default_executor(executor)
+
+    # Kill any stale _view_ sessions left over from previous runs
+    await _cleanup_stale_view_sessions()
 
     # Seed default templates
     _seed_templates()

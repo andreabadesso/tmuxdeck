@@ -32,6 +32,7 @@
           docker
           pydantic-settings
           python-multipart
+          webauthn
           # python-telegram-bot has a broken test in nixpkgs, skip checks
           (python-telegram-bot.overridePythonAttrs { doCheck = false; })
         ]);
@@ -58,7 +59,7 @@
           pname = "tmuxdeck-frontend";
           version = "0.1.0";
           src = ./frontend;
-          npmDepsHash = "sha256-i5unUJ7ZwukIjv5sWdM/vP+beEMfnGavXjCFa5MR8w0=";
+          npmDepsHash = "sha256-BtvKFGlb6emAIQTeH2Z/p3v4RKz1GrwH0TOxhzR7POE=";
           npmBuildScript = "build";
           installPhase = ''
             runHook preInstall
@@ -90,7 +91,7 @@
             mkdir -p "$DATA_DIR"
             exec uvicorn app.main:app \
               --host "''${HOST:-127.0.0.1}" \
-              --port "''${PORT:-8000}"
+              --port "''${PORT:-8000}" \
           '';
         };
 

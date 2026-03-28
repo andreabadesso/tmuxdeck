@@ -45,21 +45,21 @@ class SnapshotService:
             self._task = None
             logger.info("Snapshot service stopped")
 
-    def _is_enabled(self) -> bool:
-        settings = store.get_settings()
+    async def _is_enabled(self) -> bool:
+        settings = await asyncio.to_thread(store.get_settings)
         return settings.get("snapshotEnabled", True)
 
     async def _loop(self) -> None:
         """Capture immediately, then every SNAPSHOT_INTERVAL seconds."""
         try:
-            if self._is_enabled():
+            if await self._is_enabled():
                 await self._capture()
         except Exception:
             logger.exception("Snapshot capture failed (initial)")
         while True:
             await asyncio.sleep(SNAPSHOT_INTERVAL)
             try:
-                if self._is_enabled():
+                if await self._is_enabled():
                     await self._capture()
             except Exception:
                 logger.exception("Snapshot capture failed")
@@ -90,9 +90,9 @@ class SnapshotService:
             }
 
         async with self._lock:
-            old_snap = store.get_snapshot()
+            old_snap = await asyncio.to_thread(store.get_snapshot)
             merged = self._merge(old_snap, live_containers, now)
-            store.save_snapshot(merged)
+            await asyncio.to_thread(store.save_snapshot, merged)
 
     @staticmethod
     def _merge(

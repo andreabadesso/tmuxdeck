@@ -5,6 +5,7 @@ Extracted from api/containers.py so it can be reused by the snapshot service.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -133,8 +134,8 @@ async def enumerate_containers() -> ContainerListResponse:
         dm = DockerManager.get()
         docker_containers = await dm.list_containers()
     except Exception as exc:
-        logger.warning("Docker unavailable, skipping Docker containers", exc_info=True)
-        missing, drifted = _count_snapshot_issues(results)
+        logger.debug("Docker unavailable, skipping Docker containers")
+        missing, drifted = await asyncio.to_thread(_count_snapshot_issues, results)
         return ContainerListResponse(
             containers=results,
             docker_error=str(exc),
@@ -142,7 +143,7 @@ async def enumerate_containers() -> ContainerListResponse:
             drifted_snapshot_sessions=drifted,
         )
 
-    metas = store.list_container_metas()
+    metas = await asyncio.to_thread(store.list_container_metas)
     meta_map = {m["dockerContainerId"]: m for m in metas}
     for dc in docker_containers:
         meta = meta_map.get(dc["full_id"]) or meta_map.get(dc["id"])
@@ -174,7 +175,7 @@ def _count_snapshot_issues(
     Missing = session name gone from live.
     Drifted = session exists but has fewer windows / missing paths vs snapshot.
     """
-    snap = store.get_snapshot()
+    snap = store.get_snapshot()  # sync but called rarely, from already-threaded context
     if not snap:
         return 0, 0
 

@@ -247,24 +247,49 @@ async def _pty_terminal(
     sent_data = False
 
     async def pty_to_ws() -> None:
+        """Read PTY output and forward to WebSocket.
+
+        Uses select() to drain all immediately available data before sending,
+        coalescing many small reads into fewer WebSocket frames.  This prevents
+        high-throughput terminals (e.g. scrolling large files) from monopolising
+        the event loop with hundreds of individual send_bytes calls.
+        """
         nonlocal sent_data
-        pending_sends = 0
-        max_pending = 32
+        import select
+
+        def _read_coalesced() -> bytes:
+            """Blocking read: wait for first chunk, then drain everything available."""
+            # First read blocks until data arrives
+            data = os.read(master_fd, 65536)
+            if not data:
+                return b""
+            chunks = [data]
+            total = len(data)
+            # Drain any additional immediately available data (non-blocking)
+            while total < 256_000:
+                r, _, _ = select.select([master_fd], [], [], 0)
+                if not r:
+                    break
+                try:
+                    more = os.read(master_fd, 65536)
+                except OSError:
+                    break
+                if not more:
+                    break
+                chunks.append(more)
+                total += len(more)
+            return b"".join(chunks) if len(chunks) > 1 else chunks[0]
+
         try:
             while True:
-                # Backpressure: if client is slow, pause reading from PTY
-                while pending_sends >= max_pending:
-                    await asyncio.sleep(0.05)
-                data = await loop.run_in_executor(None, os.read, master_fd, 16384)
+                data = await loop.run_in_executor(None, _read_coalesced)
                 if not data:
                     break
                 sent_data = True
-                pending_sends += 1
-                try:
-                    await websocket.send_bytes(data)
-                finally:
-                    pending_sends -= 1
-        except (OSError, WebSocketDisconnect):
+                await websocket.send_bytes(data)
+                # Yield so the event loop can process other work
+                await asyncio.sleep(0)
+        except (OSError, WebSocketDisconnect, RuntimeError):
             pass
 
     async def ws_to_pty() -> None:
@@ -724,11 +749,23 @@ async def _pty_terminal(
                 await websocket.send_text("SESSION_GONE:")
                 await websocket.close(code=4404, reason="Session no longer exists")
     finally:
-        with contextlib.suppress(OSError):
-            os.close(master_fd)
+        # Kill the tmux process FIRST so it releases the PTY slave
         with contextlib.suppress(ProcessLookupError):
             proc.terminate()
-        await proc.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=3.0)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            with contextlib.suppress(Exception):
+                proc.kill()
+        # Close the PTY master fd in a thread — on macOS, os.close() on a
+        # PTY master can block for 30-60s if a process still holds the slave.
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, os.close, master_fd),
+                timeout=5.0,
+            )
+        except (OSError, asyncio.TimeoutError):
+            pass
 
 
 async def _bridge_terminal(
