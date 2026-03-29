@@ -19,6 +19,9 @@ import type {
   WebAuthnCredential,
   Snapshot,
   RestoreResult,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceListResponse,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -348,6 +351,17 @@ export const httpApi: ApiClient = {
     request<RestoreResult>('/snapshot/restore', { method: 'POST', body: JSON.stringify(req ?? {}) }),
   dismissSnapshotSession: (containerId: string, sessionName: string) =>
     request<void>(`/snapshot/container/${encodeURIComponent(containerId)}/session/${encodeURIComponent(sessionName)}`, { method: 'DELETE' }),
+
+  // Workspaces
+  listWorkspaces: () => request<WorkspaceListResponse>('/workspaces'),
+  createWorkspace: (name: string) =>
+    request<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name }) }),
+  updateWorkspace: (id: string, data: { name?: string; members?: WorkspaceMember[] }) =>
+    request<Workspace>(`/workspaces/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteWorkspace: (id: string) =>
+    request<void>(`/workspaces/${id}`, { method: 'DELETE' }),
+  saveWorkspaceOrder: (order: string[]) =>
+    request<void>('/workspaces/ordering', { method: 'PUT', body: JSON.stringify({ order }) }),
 };
 
 export async function createContainerStream(

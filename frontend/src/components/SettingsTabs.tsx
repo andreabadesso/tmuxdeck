@@ -4,6 +4,7 @@ const tabs = [
   { label: 'General', path: '/settings' },
   { label: 'Telegram', path: '/settings/telegram' },
   { label: 'Hotkeys', path: '/settings/hotkeys' },
+  { label: 'Workspaces', path: '/settings/workspaces' },
   { label: 'Relays', path: '/settings/relays' },
   { label: 'Bridges', path: '/settings/bridges' },
   { label: 'Templates', path: '/settings/templates' },

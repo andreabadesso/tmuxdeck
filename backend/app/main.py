@@ -23,6 +23,7 @@ from .api.files import router as files_router
 from .api.images import router as images_router
 from .api.notifications import router as notifications_router
 from .api.ordering import router as ordering_router
+from .api.workspaces import router as workspaces_router
 from .api.sessions import router as sessions_router
 from .api.snapshot import router as snapshot_router
 from .api.settings import router as settings_router
@@ -193,6 +194,7 @@ app.include_router(templates_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
 app.include_router(ordering_router)
+app.include_router(workspaces_router)
 app.include_router(debug_log_router)
 app.include_router(ws_router)
 app.include_router(bridge_ws_router)

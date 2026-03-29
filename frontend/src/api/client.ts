@@ -15,6 +15,9 @@ import type {
   RelayConfig,
   Snapshot,
   RestoreResult,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceListResponse,
 } from '../types';
 
 export interface ApiClient {
@@ -79,6 +82,13 @@ export interface ApiClient {
   getSnapshot(): Promise<Snapshot>;
   restoreSnapshot(req?: { containerId?: string; sessionName?: string; dryRun?: boolean; includeDrifted?: boolean }): Promise<RestoreResult>;
   dismissSnapshotSession(containerId: string, sessionName: string): Promise<void>;
+
+  // Workspaces
+  listWorkspaces(): Promise<WorkspaceListResponse>;
+  createWorkspace(name: string): Promise<Workspace>;
+  updateWorkspace(id: string, data: { name?: string; members?: WorkspaceMember[] }): Promise<Workspace>;
+  deleteWorkspace(id: string): Promise<void>;
+  saveWorkspaceOrder(order: string[]): Promise<void>;
 }
 
 import { mockApi } from '../mocks/mockApi';

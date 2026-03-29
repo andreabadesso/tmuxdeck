@@ -3,7 +3,11 @@ import type { SessionTarget } from '../types';
 
 const STORAGE_KEY = 'windowShortcuts';
 
-function loadMap(): Record<string, SessionTarget> {
+interface ShortcutEntry extends SessionTarget {
+  workspaceId?: string;
+}
+
+function loadMap(): Record<string, ShortcutEntry> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
@@ -11,7 +15,7 @@ function loadMap(): Record<string, SessionTarget> {
   return {};
 }
 
-function saveMap(map: Record<string, SessionTarget>) {
+function saveMap(map: Record<string, ShortcutEntry>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
 }
 
@@ -20,13 +24,13 @@ function targetKey(t: SessionTarget): string {
 }
 
 export function useWindowShortcuts(): {
-  map: Record<string, SessionTarget>;
-  assignDigit: (digit: string, target: SessionTarget) => void;
+  map: Record<string, ShortcutEntry>;
+  assignDigit: (digit: string, target: SessionTarget, workspaceId?: string) => void;
   digitByTargetKey: Record<string, string>;
 } {
-  const [map, setMap] = useState<Record<string, SessionTarget>>(loadMap);
+  const [map, setMap] = useState<Record<string, ShortcutEntry>>(loadMap);
 
-  const assignDigit = useCallback((digit: string, target: SessionTarget) => {
+  const assignDigit = useCallback((digit: string, target: SessionTarget, workspaceId?: string) => {
     setMap((prev) => {
       const next = { ...prev };
       const tk = targetKey(target);
@@ -47,7 +51,7 @@ export function useWindowShortcuts(): {
       }
 
       // Assign
-      next[digit] = target;
+      next[digit] = { ...target, workspaceId };
       saveMap(next);
       return next;
     });

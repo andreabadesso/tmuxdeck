@@ -81,6 +81,22 @@ async def rename_session(container_id: str, session_id: str, req: RenameSessionR
         order[order.index(old_sid)] = new_sid
         save_session_order(container_id, order)
 
+    # Update workspace members that reference this session
+    ws_data = store.list_workspaces()
+    for ws in ws_data["workspaces"]:
+        changed = False
+        for member in ws.get("members", []):
+            if (
+                member.get("type") == "session"
+                and member.get("sourceId") == container_id
+                and member.get("sessionId") == old_sid
+            ):
+                member["sessionId"] = new_sid
+                member["displayName"] = req.name
+                changed = True
+        if changed:
+            store.update_workspace(ws["id"], {"members": ws["members"]})
+
     await _refresh_bridge_sessions(container_id)
 
 

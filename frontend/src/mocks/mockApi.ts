@@ -273,4 +273,9 @@ export const mockApi: ApiClient = {
   async getSnapshot() { return { timestamp: null, containers: [] }; },
   async restoreSnapshot() { return { restored: [], skipped: [], errors: [] }; },
   async dismissSnapshotSession() {},
+  async listWorkspaces() { return { workspaces: [{ id: 'all', name: 'All', members: [], isDefault: true }], workspaceOrder: ['all'] }; },
+  async createWorkspace(name: string) { return { id: `ws-${Date.now()}`, name, members: [], isDefault: false }; },
+  async updateWorkspace(id: string, data: { name?: string; members?: unknown[] }) { return { id, name: data.name ?? 'Workspace', members: (data.members ?? []) as never[], isDefault: false }; },
+  async deleteWorkspace() {},
+  async saveWorkspaceOrder() {},
 };

@@ -9,9 +9,11 @@ import {
   Square,
   Trash2,
   Pencil,
+  Check,
+  ChevronRight,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import type { Container, SessionTarget, Selection } from '../types';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Container, SessionTarget, Selection, Workspace, WorkspaceMember } from '../types';
 import { isFoldedContainerSelection } from '../types';
 import { useToast } from './ToastContainer';
 import { DockerIcon } from './icons/DockerIcon';
@@ -20,6 +22,7 @@ import { SessionItem } from './SessionItem';
 import { ConfirmDialog } from './ConfirmDialog';
 import { debugLog } from '../utils/debugLog';
 import { getContainerExpanded, saveContainerExpanded } from '../utils/sidebarState';
+import type { FilterResult } from '../utils/workspaceFilter';
 
 interface ContainerNodeProps {
   container: Container;
@@ -37,6 +40,8 @@ interface ContainerNodeProps {
   setContainerExpanded?: (containerId: string, expanded: boolean) => void;
   sectionCollapsed?: boolean;
   onToggleSection?: () => void;
+  filterResult?: FilterResult | null;
+  workspaces?: Workspace[];
 }
 
 export function ContainerNode({
@@ -55,6 +60,8 @@ export function ContainerNode({
   setContainerExpanded: setContainerExpandedProp,
   sectionCollapsed: _sectionCollapsed,
   onToggleSection: _onToggleSection,
+  filterResult,
+  workspaces = [],
 }: ContainerNodeProps) {
   const { addToast } = useToast();
   const ctype = container.containerType ?? 'docker';
@@ -84,6 +91,8 @@ export function ContainerNode({
     staleTime: 30_000,
   });
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+  const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const newSessionRef = useRef<HTMLInputElement>(null);
@@ -108,15 +117,25 @@ export function ContainerNode({
   }, [showMenu]);
 
   const orderedSessions = useMemo(() => {
-    if (sessionOrder.length === 0) return container.sessions;
+    let sessions = container.sessions;
+
+    // Apply workspace filtering
+    if (filterResult) {
+      const visible = filterResult.visibleSessions.get(container.id);
+      if (visible && visible !== 'all') {
+        sessions = sessions.filter((s) => visible.has(s.id));
+      }
+    }
+
+    if (sessionOrder.length === 0) return sessions;
     const orderMap = new Map(sessionOrder.map((id, idx) => [id, idx]));
-    return [...container.sessions].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const ia = orderMap.get(a.id) ?? Infinity;
       const ib = orderMap.get(b.id) ?? Infinity;
       if (ia === Infinity && ib === Infinity) return 0;
       return ia - ib;
     });
-  }, [container.sessions, sessionOrder]);
+  }, [container.sessions, sessionOrder, filterResult, container.id]);
 
   const handleReorderSession = useCallback((fromId: string, toId: string) => {
     const currentIds = orderedSessions.map((s) => s.id);
@@ -128,6 +147,18 @@ export function ContainerNode({
     newOrder.splice(toIdx, 0, fromId);
     api.saveSessionOrder(container.id, newOrder);
   }, [orderedSessions, container.id]);
+
+  const handleToggleWorkspace = async (ws: Workspace) => {
+    const isMember = ws.members.some((m) => m.type === 'source' && m.sourceId === container.id);
+    let newMembers: WorkspaceMember[];
+    if (isMember) {
+      newMembers = ws.members.filter((m) => !(m.type === 'source' && m.sourceId === container.id));
+    } else {
+      newMembers = [...ws.members, { type: 'source' as const, sourceId: container.id, displayName: container.displayName }];
+    }
+    await api.updateWorkspace(ws.id, { members: newMembers });
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+  };
 
   const handleRename = async () => {
     const trimmed = renameValue.trim();
@@ -291,6 +322,34 @@ export function ContainerNode({
                   <MenuItem icon={<Square size={13} />} label="Stop" onClick={() => handleAction('stop')} />
                 )}
                 <MenuItem icon={<Pencil size={13} />} label="Rename" onClick={() => handleAction('rename')} />
+                {workspaces.filter((w) => !w.isDefault).length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowWorkspaceMenu(!showWorkspaceMenu)}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                    >
+                      Workspaces
+                      <ChevronRight size={12} className="ml-auto" />
+                    </button>
+                    {showWorkspaceMenu && (
+                      <div className="absolute right-full top-0 mr-1 w-40 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
+                        {workspaces.filter((w) => !w.isDefault).map((ws) => {
+                          const isMember = ws.members.some((m) => m.type === 'source' && m.sourceId === container.id);
+                          return (
+                            <button
+                              key={ws.id}
+                              onClick={() => handleToggleWorkspace(ws)}
+                              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                            >
+                              <span className="w-4 shrink-0">{isMember && <Check size={12} />}</span>
+                              <span className="truncate">{ws.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="border-t border-gray-700 my-1" />
                 <MenuItem
                   icon={<Trash2 size={13} />}
@@ -322,6 +381,7 @@ export function ContainerNode({
               onReorderSession={handleReorderSession}
               isSessionExpanded={isSessionExpandedProp}
               setSessionExpanded={setSessionExpandedProp}
+              workspaces={workspaces}
             />
           ))}
 

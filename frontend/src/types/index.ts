@@ -224,6 +224,24 @@ export interface DebugLogEntry {
   detail?: string;
 }
 
+// --- Workspaces ---
+
+export type WorkspaceMember =
+  | { type: 'source'; sourceId: string; displayName: string }
+  | { type: 'session'; sourceId: string; sessionId: string; displayName: string };
+
+export interface Workspace {
+  id: string;
+  name: string;
+  members: WorkspaceMember[];
+  isDefault: boolean;
+}
+
+export interface WorkspaceListResponse {
+  workspaces: Workspace[];
+  workspaceOrder: string[];
+}
+
 // Snapshot types (snake_case — raw Python dict, not Pydantic CamelModel)
 export interface SnapshotWindow { index: number; name: string; path: string; }
 export interface SnapshotSession { name: string; windows: SnapshotWindow[]; }

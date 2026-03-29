@@ -1,7 +1,7 @@
 import { useEffect, useRef, useImperativeHandle, useCallback, forwardRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
+import type { ILinkProvider, ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Type, MousePointer2, Copy, ClipboardPaste } from 'lucide-react';
 import { useToast } from './ToastContainer';
 import { getNaturalTouchScroll } from '../utils/sidebarState';
@@ -58,6 +58,104 @@ const THEME = {
   brightCyan: '#22d3ee',
   brightWhite: '#fafafa',
 };
+
+// --- Wrapped-line helpers for URL detection and text selection ---
+
+const URL_RE = /https?:\/\/[^\s"'<>{}|\\^`\[\]]+/g;
+
+/**
+ * Given a buffer row, find the first and last row of the soft-wrapped block
+ * and return the joined text plus the start row index.
+ */
+function getWrappedBlock(term: XTerm, bufferRow: number): { text: string; startRow: number; rowLengths: number[] } {
+  const buf = term.buffer.active;
+  let startRow = bufferRow;
+  // Walk backward to find the first row of the wrapped block
+  while (startRow > 0) {
+    const line = buf.getLine(startRow);
+    if (!line || !line.isWrapped) break;
+    startRow--;
+  }
+  // Walk forward to collect all rows
+  const rowLengths: number[] = [];
+  let text = '';
+  let row = startRow;
+  while (row < buf.length) {
+    const line = buf.getLine(row);
+    if (!line) break;
+    if (row > startRow && !line.isWrapped) break;
+    const rowText = line.translateToString();
+    rowLengths.push(rowText.length);
+    text += rowText;
+    row++;
+  }
+  return { text, startRow, rowLengths };
+}
+
+/**
+ * Custom link provider that detects URLs across soft-wrapped lines.
+ */
+function createWrappedLinkProvider(term: XTerm): ILinkProvider {
+  return {
+    provideLinks(y: number, cb: (links: ILink[] | undefined) => void) {
+      const buf = term.buffer.active;
+      const bufferRow = y - 1; // xterm API: y is 1-based
+      const line = buf.getLine(bufferRow);
+      if (!line) { cb(undefined); return; }
+
+      const { text, startRow, rowLengths } = getWrappedBlock(term, bufferRow);
+
+      const links: ILink[] = [];
+      let match: RegExpExecArray | null;
+      URL_RE.lastIndex = 0;
+      while ((match = URL_RE.exec(text)) !== null) {
+        const matchStart = match.index;
+        const matchEnd = matchStart + match[0].length;
+        const url = match[0];
+
+        // Map character offset to (row, col)
+        let offset = 0;
+        let linkStartRow = startRow;
+        let linkStartCol = 0;
+        for (let i = 0; i < rowLengths.length; i++) {
+          if (offset + rowLengths[i] > matchStart) {
+            linkStartRow = startRow + i;
+            linkStartCol = matchStart - offset;
+            break;
+          }
+          offset += rowLengths[i];
+        }
+
+        offset = 0;
+        let linkEndRow = startRow;
+        let linkEndCol = 0;
+        for (let i = 0; i < rowLengths.length; i++) {
+          if (offset + rowLengths[i] >= matchEnd) {
+            linkEndRow = startRow + i;
+            linkEndCol = matchEnd - offset;
+            break;
+          }
+          offset += rowLengths[i];
+        }
+
+        // Only include links that touch the requested row
+        if (linkStartRow <= bufferRow && linkEndRow >= bufferRow) {
+          links.push({
+            range: {
+              start: { x: linkStartCol + 1, y: linkStartRow + 1 },
+              end: { x: linkEndCol, y: linkEndRow + 1 },
+            },
+            text: url,
+            activate() {
+              window.open(url, '_blank', 'noopener');
+            },
+          });
+        }
+      }
+      cb(links.length > 0 ? links : undefined);
+    },
+  };
+}
 
 function setupMockTerminal(term: XTerm, containerId: string, sessionName: string) {
   term.writeln(`\x1b[1;34m[TmuxDeck]\x1b[0m Connected to \x1b[1;32m${sessionName}\x1b[0m in container \x1b[1;33m${containerId.slice(0, 12)}\x1b[0m`);
@@ -736,10 +834,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     term.onBell(() => { /* noop */ });
 
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
     term.open(container);
+
+    // Custom link provider that detects URLs across soft-wrapped lines
+    const linkDisposable = term.registerLinkProvider(createWrappedLinkProvider(term));
 
     // Register custom OSC 7337 handler for tmuxdeck-open
     const oscDisposable = term.parser.registerOscHandler(7337, (data) => {
@@ -798,6 +897,30 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       setHasSelection(has);
       if (has) selectionTextRef.current = term.getSelection();
     });
+
+    // Double-click on wrapped lines: select the entire wrapped block
+    const handleDblClick = (e: MouseEvent) => {
+      const buf = term.buffer.active;
+      // Convert mouse Y to buffer row
+      const cellHeight = container.clientHeight / term.rows;
+      const viewportRow = Math.floor(e.offsetY / cellHeight);
+      const bufferRow = buf.viewportY + viewportRow;
+      const line = buf.getLine(bufferRow);
+      if (!line) return;
+
+      // Check if this row is part of a wrapped block (multi-row)
+      const isPartOfWrap = line.isWrapped || (bufferRow + 1 < buf.length && buf.getLine(bufferRow + 1)?.isWrapped);
+      if (!isPartOfWrap) return; // let default handle non-wrapped lines
+
+      const { text, startRow, rowLengths } = getWrappedBlock(term, bufferRow);
+      const totalLen = text.length;
+      if (totalLen === 0 || rowLengths.length <= 1) return;
+
+      // Select the entire wrapped block
+      term.select(0, startRow, totalLen);
+      e.preventDefault();
+    };
+    container.addEventListener('dblclick', handleDblClick);
 
     // Measure container (flex-sized) and fit terminal
     const fitAndResize = (retries = 3) => {
@@ -1050,6 +1173,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       oscDisposable.dispose();
       osc52Disposable.dispose();
       selectionDisposable.dispose();
+      linkDisposable.dispose();
+      container.removeEventListener('dblclick', handleDblClick);
       const cleanup = (wrapper as unknown as Record<string, (() => void) | undefined>).__wsCleanup;
       cleanup?.();
       wsRef.current = null;

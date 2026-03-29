@@ -14,9 +14,11 @@ import { useSessionExpandedState } from '../hooks/useSessionExpandedState';
 import { useContainerExpandedState } from '../hooks/useContainerExpandedState';
 import { api } from '../api/client';
 import { logout } from '../api/httpClient';
-import type { SessionTarget, Selection, FoldedSessionTarget, FoldedContainerTarget, Container, ContainerListResponse, Settings, ClaudeNotification, TmuxWindow } from '../types';
+import type { SessionTarget, Selection, FoldedSessionTarget, FoldedContainerTarget, Container, ContainerListResponse, Settings, ClaudeNotification, TmuxWindow, WorkspaceListResponse } from '../types';
 import { isWindowSelection, isFoldedSelection, isFoldedContainerSelection } from '../types';
 import { sortSessionsByOrder } from '../utils/sessionOrder';
+import { filterWorkspace } from '../utils/workspaceFilter';
+import { getSelectedSession, saveSelectedSession, getActiveWorkspaceId, saveActiveWorkspaceId, getWorkspaceSelectedSession } from '../utils/sidebarState';
 import { DEFAULT_HOTKEYS, matchesBinding, matchesDoublePressKey } from '../utils/hotkeys';
 import { FoldedContainerPreview } from '../components/FoldedContainerPreview';
 import { BridgeLatencyOverlay } from '../components/BridgeLatencyOverlay';
@@ -104,7 +106,8 @@ function getInitialSession(): SessionTarget | null {
       return state.selectSession;
     }
   } catch { /* ignore */ }
-  return null;
+  // Restore from sessionStorage (per-tab persistence across reloads)
+  return getSelectedSession();
 }
 
 export function MainPage() {
@@ -114,6 +117,7 @@ export function MainPage() {
   const { isContainerExpanded, setContainerExpanded } = useContainerExpandedState();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const poolRef = useRef<TerminalPoolHandle>(null);
   const previewTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -244,6 +248,30 @@ export function MainPage() {
     clearPreviewImmediate();
     setSelectedSession(target);
   }, [clearPreviewImmediate]);
+
+  // Persist selected session to sessionStorage for per-tab reload persistence
+  useEffect(() => {
+    if (selectedSession && isWindowSelection(selectedSession)) {
+      saveSelectedSession(selectedSession);
+    } else {
+      saveSelectedSession(null);
+    }
+  }, [selectedSession]);
+
+  // When workspace changes, restore the last selected session for that workspace
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const wsId = (e as CustomEvent<string>).detail;
+      const saved = getWorkspaceSelectedSession(wsId);
+      if (saved) {
+        pool.ensure(saved);
+        setSelectedSession(saved);
+        requestAnimationFrame(() => poolRef.current?.focusActive());
+      }
+    };
+    window.addEventListener('workspace-changed', handler);
+    return () => window.removeEventListener('workspace-changed', handler);
+  }, [pool]);
 
   // Follow tmux window/session changes initiated from the terminal (e.g. C-B N, C-B S)
   const handleActiveWindowChanged = useCallback((containerId: string, sessionName: string, windowIndex: number) => {
@@ -415,6 +443,13 @@ export function MainPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Close shortcuts modal on ESC
+      if (shortcutsOpen && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShortcutsOpen(false);
+        return;
+      }
       if (matchesBinding(e, hotkeys.quickSwitch)) {
         e.preventDefault();
         setSwitcherOpen((v) => !v);
@@ -432,12 +467,21 @@ export function MainPage() {
       if (digitMatch && (e.ctrlKey || e.metaKey)) {
         const digit = digitMatch[1];
         e.preventDefault();
-        if (e.altKey) {
+        if (digit === '0' && !e.altKey) {
+          // Ctrl+0: show shortcuts overview
+          setShortcutsOpen((v) => !v);
+        } else if (e.altKey) {
           // Ctrl+Alt+N: assign digit — only when a window is selected
-          if (selectedSession && isWindowSelection(selectedSession)) assignDigit(digit, selectedSession);
+          if (selectedSession && isWindowSelection(selectedSession)) assignDigit(digit, selectedSession, getActiveWorkspaceId());
         } else {
           const target = shortcutMapRef.current[digit];
-          if (target) selectSession(target.containerId, target.sessionName, target.windowIndex);
+          if (target) {
+            // Switch workspace if the shortcut was assigned in a different one
+            if (target.workspaceId) {
+              saveActiveWorkspaceId(target.workspaceId);
+            }
+            selectSession(target.containerId, target.sessionName, target.windowIndex);
+          }
         }
       }
       // Alt+1-9: jump to Nth window in current session — skip if folded
@@ -659,14 +703,26 @@ export function MainPage() {
         const containers: Container[] | undefined = queryClient.getQueryData<ContainerListResponse>(['containers'])?.containers;
         if (containers && selectedSession) {
           e.preventDefault();
+
+          // Apply workspace filtering
+          const wsId = getActiveWorkspaceId();
+          const wsData = queryClient.getQueryData<WorkspaceListResponse>(['workspaces']);
+          const activeWs = wsData?.workspaces.find((w) => w.id === wsId);
+          const wsFilter = activeWs && !activeWs.isDefault ? filterWorkspace(activeWs.members, containers) : null;
+
           const allItems: Selection[] = [];
           for (const c of containers) {
             if (c.status !== 'running' && c.containerType !== 'host' && c.containerType !== 'local' && c.containerType !== 'bridge') continue;
+            // Skip containers not in the active workspace
+            if (wsFilter && !wsFilter.visibleContainerIds.has(c.id)) continue;
             // Always add container header (it's always visible)
             allItems.push({ containerId: c.id, containerFolded: true });
             if (!isContainerExpanded(c.id)) continue;
             const ordered = sortSessionsByOrder(c.sessions, queryClient.getQueryData<string[]>(['sessionOrder', c.id]) ?? []);
+            const visibleSessions = wsFilter?.visibleSessions.get(c.id);
             for (const s of ordered) {
+              // Skip sessions not in the active workspace
+              if (visibleSessions && visibleSessions !== 'all' && !visibleSessions.has(s.id)) continue;
               // Always add session header (visible when container is expanded)
               allItems.push({ containerId: c.id, sessionName: s.name, sessionId: s.id, folded: true });
               if (isSessionExpanded(c.id, s.id)) {
@@ -706,7 +762,7 @@ export function MainPage() {
         }
       }
       // Deselect (double-press)
-      if (matchesDoublePressKey(e, hotkeys.deselect) && !switcherOpen && !helpOpen) {
+      if (matchesDoublePressKey(e, hotkeys.deselect) && !switcherOpen && !helpOpen && !shortcutsOpen) {
         const now = Date.now();
         if (now - escTimestampRef.current < 500) {
           if (selectedSession === null && previewSession === null) {
@@ -725,7 +781,7 @@ export function MainPage() {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [switcherOpen, helpOpen, clearPreviewImmediate, selectedSession, previewSession, assignDigit, selectSession, selectFoldedSession, selectFoldedContainer, setSessionExpanded, isSessionExpanded, setContainerExpanded, isContainerExpanded, queryClient, digitByTargetKey, hotkeys]);
+  }, [switcherOpen, helpOpen, shortcutsOpen, clearPreviewImmediate, selectedSession, previewSession, assignDigit, selectSession, selectFoldedSession, selectFoldedContainer, setSessionExpanded, isSessionExpanded, setContainerExpanded, isContainerExpanded, queryClient, digitByTargetKey, hotkeys]);
 
   return (
     <div className="flex h-full w-full">
@@ -892,6 +948,86 @@ export function MainPage() {
 
       {helpOpen && <KeyboardHelp onClose={() => setHelpOpen(false)} hotkeys={hotkeys} />}
 
+      {shortcutsOpen && (
+        <ShortcutsOverview
+          map={shortcutMap}
+          onClose={() => setShortcutsOpen(false)}
+          onSelect={(target) => {
+            setShortcutsOpen(false);
+            if (target.workspaceId) saveActiveWorkspaceId(target.workspaceId);
+            selectSession(target.containerId, target.sessionName, target.windowIndex);
+          }}
+        />
+      )}
+
+    </div>
+  );
+}
+
+function ShortcutsOverview({
+  map,
+  onClose,
+  onSelect,
+}: {
+  map: Record<string, SessionTarget & { workspaceId?: string }>;
+  onClose: () => void;
+  onSelect: (target: SessionTarget & { workspaceId?: string }) => void;
+}) {
+  const digits = Object.keys(map).sort();
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center pt-[15vh] z-50" onClick={onClose}>
+      <div
+        className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-gray-800">
+          <h2 className="text-sm font-semibold text-gray-200">Quick Switch Shortcuts</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Ctrl+Alt+N to assign, Ctrl+N to jump</p>
+        </div>
+        <div className="py-1 max-h-72 overflow-y-auto">
+          {digits.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-gray-600">
+              No shortcuts assigned yet.
+              <br />
+              <span className="text-xs">Select a window and press Ctrl+Alt+1-9</span>
+            </div>
+          ) : (
+            digits.map((digit) => {
+              const target = map[digit];
+              return (
+                <button
+                  key={digit}
+                  onClick={() => onSelect(target)}
+                  className="flex items-center gap-3 w-full px-4 py-2.5 text-left text-gray-400 hover:bg-gray-800/60 transition-colors"
+                >
+                  <kbd className="text-xs font-mono font-medium bg-gray-700 text-yellow-400 rounded px-1.5 py-0.5 shrink-0">
+                    {digit}
+                  </kbd>
+                  <span className="text-sm truncate flex-1">
+                    {target.containerId}/{target.sessionName}:{target.windowIndex}
+                  </span>
+                  {target.workspaceId && target.workspaceId !== 'all' && (
+                    <span className="text-[10px] text-gray-600 shrink-0">{target.workspaceId}</span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-800 text-[10px] text-gray-600">
+          <kbd className="bg-gray-800 px-1 py-0.5 rounded border border-gray-700">Ctrl+0</kbd> toggle &middot;{' '}
+          <kbd className="bg-gray-800 px-1 py-0.5 rounded border border-gray-700">ESC</kbd> close
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
   Settings,
@@ -9,13 +9,17 @@ import {
   PanelLeftOpen,
   AlertTriangle,
   Camera,
+  Radio,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { ContainerNode } from './ContainerNode';
 import { NewContainerDialog } from './NewContainerDialog';
 import { RestoreDialog } from './RestoreDialog';
-import type { Container, SessionTarget, Selection } from '../types';
-import { getSidebarCollapsed, saveSidebarCollapsed, getSectionsCollapsed, saveSectionsCollapsed } from '../utils/sidebarState';
+import { WorkspaceTabs } from './WorkspaceTabs';
+import { WorkspaceAddMemberDialog } from './WorkspaceAddMemberDialog';
+import type { Container, SessionTarget, Selection, Workspace } from '../types';
+import { getSidebarCollapsed, saveSidebarCollapsed, getSectionsCollapsed, saveSectionsCollapsed, getActiveWorkspaceId, saveActiveWorkspaceId } from '../utils/sidebarState';
+import { filterWorkspace, type FilterResult } from '../utils/workspaceFilter';
 
 const CONTAINER_DRAG_MIME = 'application/x-container-order';
 
@@ -57,6 +61,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
   const isResizing = useRef(false);
   const [showNewContainer, setShowNewContainer] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
   const [sectionsCollapsed, setSectionsCollapsedRaw] = useState<Record<string, boolean>>(getSectionsCollapsed);
   const setSectionsCollapsed = (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
     setSectionsCollapsedRaw((prev) => { const next = updater(prev); saveSectionsCollapsed(next); return next; });
@@ -122,6 +127,37 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
     staleTime: 60_000,
   });
 
+  const queryClient = useQueryClient();
+
+  const { data: workspacesData } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => api.listWorkspaces(),
+    staleTime: 30_000,
+  });
+
+  const workspaces = workspacesData?.workspaces ?? [];
+  const workspaceOrder = workspacesData?.workspaceOrder ?? [];
+  const hasCustomWorkspaces = workspaces.length > 1;
+
+  const [activeWorkspaceId, setActiveWorkspaceIdRaw] = useState(getActiveWorkspaceId);
+  const setActiveWorkspaceId = (id: string) => {
+    setActiveWorkspaceIdRaw(id);
+    saveActiveWorkspaceId(id);
+  };
+
+  // Sync workspace ID when changed externally (e.g., Ctrl+digit shortcut)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setActiveWorkspaceIdRaw(id);
+    };
+    window.addEventListener('workspace-changed', handler);
+    return () => window.removeEventListener('workspace-changed', handler);
+  }, []);
+
+  // If active workspace was deleted, fall back to "all"
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces.find((w) => w.isDefault);
+
   const snapshotEnabled = settings?.snapshotEnabled ?? true;
 
   const { containers = [], dockerError } = data ?? {};
@@ -150,6 +186,28 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
       return ia - ib;
     });
   }, [containers, containerOrder]);
+
+  // Workspace filtering
+  const filterResult = useMemo<FilterResult | null>(() => {
+    if (!activeWorkspace || activeWorkspace.isDefault) return null;
+    return filterWorkspace(activeWorkspace.members, containers);
+  }, [activeWorkspace, containers]);
+
+  const displayedContainers = useMemo(() => {
+    if (!filterResult) return orderedContainers;
+    return orderedContainers.filter((c) => filterResult.visibleContainerIds.has(c.id));
+  }, [orderedContainers, filterResult]);
+
+  const handleCreateWorkspace = useCallback(async (name: string) => {
+    await api.createWorkspace(name);
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+  }, [queryClient]);
+
+  const handleUpdateWorkspaceMembers = useCallback(async (members: import('../types').WorkspaceMember[]) => {
+    if (!activeWorkspace || activeWorkspace.isDefault) return;
+    await api.updateWorkspace(activeWorkspace.id, { members });
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+  }, [activeWorkspace, queryClient]);
 
   const [dragOverContainerId, setDragOverContainerId] = useState<string | null>(null);
 
@@ -216,6 +274,15 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
           </div>
         </div>
 
+        <WorkspaceTabs
+          workspaces={workspaces}
+          workspaceOrder={workspaceOrder}
+          activeId={activeWorkspace?.id ?? 'all'}
+          onSelect={setActiveWorkspaceId}
+          onCreate={handleCreateWorkspace}
+          onAddMember={activeWorkspace && !activeWorkspace.isDefault ? () => setShowAddMember(true) : undefined}
+        />
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
           {error && (
             <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-red-900/30 border border-red-800/50">
@@ -245,7 +312,7 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
               </p>
             </div>
           )}
-          {orderedContainers.map((container) => {
+          {displayedContainers.map((container) => {
             const isSpecial = container.containerType === 'host' || container.containerType === 'local' || container.containerType === 'bridge';
             const sectionKey = container.containerType === 'bridge' ? container.id : (container.containerType ?? 'special');
             return (
@@ -289,10 +356,23 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
                   setContainerExpanded={setContainerExpanded}
                   sectionCollapsed={isSpecial ? sectionsCollapsed[sectionKey] : undefined}
                   onToggleSection={isSpecial ? () => setSectionsCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] })) : undefined}
+                  filterResult={filterResult}
+                  workspaces={workspaces}
                 />
               </div>
             );
           })}
+          {/* Offline workspace members */}
+          {filterResult?.offlineMembers.map((member) => (
+            <div key={member.sourceId} className="px-2 py-0.5 opacity-50">
+              <div className="flex items-center gap-1.5">
+                <Radio size={14} className="text-gray-500 shrink-0" />
+                <span className="text-sm text-gray-500 truncate">
+                  {member.displayName} offline
+                </span>
+              </div>
+            </div>
+          ))}
           {containers.length === 0 && (
             <div className="px-4 py-8 text-center text-gray-500 text-sm">
               No containers yet.
@@ -365,6 +445,15 @@ export function Sidebar({ collapsed: initialCollapsed, selectedSession, previewS
 
       {showRestore && (
         <RestoreDialog onClose={() => setShowRestore(false)} />
+      )}
+
+      {showAddMember && activeWorkspace && !activeWorkspace.isDefault && (
+        <WorkspaceAddMemberDialog
+          workspace={activeWorkspace}
+          containers={containers}
+          onClose={() => setShowAddMember(false)}
+          onUpdateMembers={handleUpdateWorkspaceMembers}
+        />
       )}
     </>
   );

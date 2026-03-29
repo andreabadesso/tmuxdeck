@@ -13,6 +13,7 @@ import { RelaySettingsPage } from './pages/RelaySettingsPage';
 import { HotkeySettingsPage } from './pages/HotkeySettingsPage';
 import { DebugLogPage } from './pages/DebugLogPage';
 import { HelpPage } from './pages/HelpPage';
+import { WorkspacesPage } from './pages/WorkspacesPage';
 import { useAuth } from './hooks/useAuth';
 import { setOnAuthLost } from './api/httpClient';
 
@@ -67,6 +68,7 @@ function App() {
                 <Route path="/settings/telegram" element={<TelegramSettingsPage />} />
                 <Route path="/settings/hotkeys" element={<HotkeySettingsPage />} />
                 <Route path="/settings/relays" element={<RelaySettingsPage />} />
+                <Route path="/settings/workspaces" element={<WorkspacesPage />} />
                 <Route path="/settings/bridges" element={<BridgeSettingsPage />} />
                 <Route path="/settings/log" element={<DebugLogPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check, CircleOff } from 'lucide-react';
-import type { TmuxSession, TmuxWindow, SessionTarget, Selection } from '../types';
+import { Terminal as TerminalIcon, ChevronRight, ChevronDown, X, AppWindow, Bell, Circle, Plus, Info, Copy, Check, CircleOff, MoreVertical } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { TmuxSession, TmuxWindow, SessionTarget, Selection, Workspace, WorkspaceMember } from '../types';
 import { isFoldedSelection, isWindowSelection } from '../types';
 import { api } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -166,6 +167,7 @@ interface SessionItemProps {
   onReorderSession?: (fromSessionId: string, toSessionId: string) => void;
   isSessionExpanded?: (containerId: string, sessionId: string) => boolean;
   setSessionExpanded?: (containerId: string, sessionId: string, expanded: boolean) => void;
+  workspaces?: Workspace[];
 }
 
 export function SessionItem({
@@ -182,6 +184,7 @@ export function SessionItem({
   onReorderSession,
   isSessionExpanded: isSessionExpandedProp,
   setSessionExpanded: setSessionExpandedProp,
+  workspaces = [],
 }: SessionItemProps) {
   const { addToast } = useToast();
   // Use centralized expanded state if provided, otherwise fall back to local state
@@ -214,6 +217,10 @@ export function SessionItem({
   const [hooksHintWindow, setHooksHintWindow] = useState<number | null>(null);
   const hooksHintAnchorRef = useRef<HTMLButtonElement | null>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showSessionMenu, setShowSessionMenu] = useState(false);
+  const [showWorkspaceSubmenu, setShowWorkspaceSubmenu] = useState(false);
+  const sessionMenuRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     return () => {
@@ -222,6 +229,37 @@ export function SessionItem({
   }, []);
 
   const closeHooksHint = useCallback(() => setHooksHintWindow(null), []);
+
+  useEffect(() => {
+    if (!showSessionMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (sessionMenuRef.current && !sessionMenuRef.current.contains(e.target as Node)) {
+        setShowSessionMenu(false);
+        setShowWorkspaceSubmenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSessionMenu]);
+
+  const handleToggleSessionWorkspace = async (ws: Workspace) => {
+    const isSourceMember = ws.members.some((m) => m.type === 'source' && m.sourceId === containerId);
+    if (isSourceMember) return; // inherited, can't toggle
+
+    const isSessionMember = ws.members.some(
+      (m) => m.type === 'session' && m.sourceId === containerId && m.sessionId === session.id
+    );
+    let newMembers: WorkspaceMember[];
+    if (isSessionMember) {
+      newMembers = ws.members.filter(
+        (m) => !(m.type === 'session' && m.sourceId === containerId && m.sessionId === session.id)
+      );
+    } else {
+      newMembers = [...ws.members, { type: 'session' as const, sourceId: containerId, sessionId: session.id, displayName: session.name }];
+    }
+    await api.updateWorkspace(ws.id, { members: newMembers });
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+  };
 
   useEffect(() => {
     if (renaming && inputRef.current) inputRef.current.focus();
@@ -520,6 +558,55 @@ export function SessionItem({
         >
           <X size={12} />
         </button>
+        {workspaces.filter((w) => !w.isDefault).length > 0 && (
+          <div className="relative" ref={sessionMenuRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowSessionMenu(!showSessionMenu); }}
+              className="p-0.5 rounded hover:bg-gray-700 text-gray-500 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              title="Session options"
+            >
+              <MoreVertical size={12} />
+            </button>
+            {showSessionMenu && (
+              <div className="absolute right-0 top-full mt-1 w-40 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowWorkspaceSubmenu(!showWorkspaceSubmenu)}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  >
+                    Workspaces
+                    <ChevronRight size={12} className="ml-auto" />
+                  </button>
+                  {showWorkspaceSubmenu && (
+                    <div className="absolute right-full top-0 mr-1 w-40 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
+                      {workspaces.filter((w) => !w.isDefault).map((ws) => {
+                        const isSourceMember = ws.members.some((m) => m.type === 'source' && m.sourceId === containerId);
+                        const isSessionMember = ws.members.some(
+                          (m) => m.type === 'session' && m.sourceId === containerId && m.sessionId === session.id
+                        );
+                        const isChecked = isSourceMember || isSessionMember;
+                        return (
+                          <button
+                            key={ws.id}
+                            onClick={() => handleToggleSessionWorkspace(ws)}
+                            disabled={isSourceMember}
+                            className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm transition-colors ${
+                              isSourceMember ? 'text-gray-500 cursor-default' : 'text-gray-300 hover:bg-gray-700'
+                            }`}
+                            title={isSourceMember ? 'Inherited from source' : undefined}
+                          >
+                            <span className="w-4 shrink-0">{isChecked && <Check size={12} />}</span>
+                            <span className="truncate">{ws.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Window rows */}

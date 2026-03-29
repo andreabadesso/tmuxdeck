@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -289,4 +291,48 @@ class SessionOrderRequest(CamelModel):
 
 
 class OrderResponse(CamelModel):
+    order: list[str]
+
+
+# --- Workspaces ---
+
+
+class WorkspaceMemberSource(CamelModel):
+    type: Literal["source"] = "source"
+    source_id: str
+    display_name: str
+
+
+class WorkspaceMemberSession(CamelModel):
+    type: Literal["session"] = "session"
+    source_id: str
+    session_id: str
+    display_name: str
+
+
+WorkspaceMember = WorkspaceMemberSource | WorkspaceMemberSession
+
+
+class WorkspaceResponse(CamelModel):
+    id: str
+    name: str
+    members: list[WorkspaceMember]
+    is_default: bool = False
+
+
+class CreateWorkspaceRequest(CamelModel):
+    name: str
+
+
+class UpdateWorkspaceRequest(CamelModel):
+    name: str | None = None
+    members: list[WorkspaceMember] | None = None
+
+
+class WorkspaceListResponse(CamelModel):
+    workspaces: list[WorkspaceResponse]
+    workspace_order: list[str]
+
+
+class WorkspaceOrderRequest(CamelModel):
     order: list[str]

@@ -486,3 +486,88 @@ def remove_container_from_snapshot(container_id: str) -> None:
     containers = snap.get("containers", [])
     snap["containers"] = [c for c in containers if c.get("id") != container_id]
     save_snapshot(snap)
+
+
+# --- Workspaces ---------------------------------------------------------------
+
+
+def workspaces_path() -> Path:
+    return config.data_path / "workspaces.json"
+
+
+_DEFAULT_WORKSPACE = {
+    "id": "all",
+    "name": "All",
+    "members": [],
+    "isDefault": True,
+}
+
+
+def _load_workspaces() -> dict[str, Any]:
+    p = workspaces_path()
+    if not p.exists():
+        return {
+            "workspaces": [dict(_DEFAULT_WORKSPACE)],
+            "workspaceOrder": ["all"],
+        }
+    return _read_json(p)
+
+
+def _save_workspaces(data: dict[str, Any]) -> None:
+    _write_json(workspaces_path(), data)
+
+
+def list_workspaces() -> dict[str, Any]:
+    return _load_workspaces()
+
+
+def create_workspace(name: str) -> dict[str, Any]:
+    data = _load_workspaces()
+    workspace = {
+        "id": str(uuid.uuid4())[:8],
+        "name": name,
+        "members": [],
+        "isDefault": False,
+    }
+    data["workspaces"].append(workspace)
+    data["workspaceOrder"].append(workspace["id"])
+    _save_workspaces(data)
+    return workspace
+
+
+def update_workspace(workspace_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    data = _load_workspaces()
+    for ws in data["workspaces"]:
+        if ws["id"] == workspace_id:
+            if ws.get("isDefault"):
+                # Only allow renaming the default workspace, not changing members
+                if "name" in updates and updates["name"] is not None:
+                    ws["name"] = updates["name"]
+            else:
+                for key in ("name", "members"):
+                    if key in updates and updates[key] is not None:
+                        ws[key] = updates[key]
+            _save_workspaces(data)
+            return ws
+    return None
+
+
+def delete_workspace(workspace_id: str) -> bool:
+    data = _load_workspaces()
+    original_len = len(data["workspaces"])
+    data["workspaces"] = [ws for ws in data["workspaces"] if not (ws["id"] == workspace_id and not ws.get("isDefault"))]
+    if len(data["workspaces"]) == original_len:
+        return False
+    data["workspaceOrder"] = [wid for wid in data["workspaceOrder"] if wid != workspace_id]
+    _save_workspaces(data)
+    return True
+
+
+def save_workspace_order(order: list[str]) -> None:
+    data = _load_workspaces()
+    # Ensure "all" is always first
+    if "all" in order:
+        order.remove("all")
+    order.insert(0, "all")
+    data["workspaceOrder"] = order
+    _save_workspaces(data)
