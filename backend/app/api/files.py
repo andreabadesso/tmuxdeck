@@ -144,6 +144,46 @@ async def _get_file_bridge(container_id: str, path: str) -> tuple[bytes, str]:
     return data, mime
 
 
+@router.get("/{container_id}/file/download")
+async def download_file(container_id: str, path: str = Query(..., description="Absolute path to file")):
+    """Download a file from inside a container or from the host filesystem."""
+
+    filename = os.path.basename(path)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    # Bridge containers: fetch file through bridge WebSocket
+    if is_bridge(container_id):
+        data, mime = await _get_file_bridge(container_id, path)
+        return Response(content=data, media_type=mime, headers=headers)
+
+    # Read file
+    if _is_special(container_id):
+        if not os.path.isabs(path):
+            raise HTTPException(status_code=400, detail="Path must be absolute")
+        if not os.path.isfile(path):
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        mime = _detect_mime_local(path)
+        size = os.path.getsize(path)
+        if size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File too large ({size} bytes). Max: {MAX_FILE_SIZE} bytes")
+        with open(path, "rb") as f:
+            data = f.read()
+    else:
+        mime = await _detect_mime_container(container_id, path)
+        dm = DockerManager.get()
+        try:
+            data = await dm.get_file(container_id, path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        except Exception as e:
+            logger.exception("Error reading file %s from %s", path, container_id)
+            raise HTTPException(status_code=500, detail=str(e))
+        if len(data) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File too large ({len(data)} bytes). Max: {MAX_FILE_SIZE} bytes")
+
+    return Response(content=data, media_type=mime, headers=headers)
+
+
 @router.get("/{container_id}/file")
 async def get_file(container_id: str, path: str = Query(..., description="Absolute path to file")):
     """Serve a file from inside a container or from the host filesystem."""

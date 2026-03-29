@@ -163,6 +163,15 @@ export const TerminalPool = forwardRef<TerminalPoolHandle, TerminalPoolProps>(
                     next.set(entry.key, { containerId: entry.containerId, path });
                     return next;
                   })}
+                  onDownloadFile={(path) => {
+                    const url = `/api/v1/containers/${entry.containerId}/file/download?path=${encodeURIComponent(path)}`;
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = path.split('/').pop() || 'download';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
                   onActiveWindowChanged={isActive && onActiveWindowChanged ? (session, idx) => onActiveWindowChanged(entry.containerId, session, idx) : undefined}
                   onWindowsChanged={isActive && onWindowsChanged ? (session, windows) => onWindowsChanged(entry.containerId, session, windows) : undefined}
                   onReady={() => setReadyKeys(prev => {

@@ -96,6 +96,22 @@ export function HelpPage() {
           </div>
         </section>
 
+        {/* Downloading Files (tmuxdeck-download) */}
+        <section>
+          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
+            Downloading Files (<code className="font-mono normal-case">tmuxdeck-download</code>)
+          </h2>
+          <div className="space-y-3 text-sm text-gray-400">
+            <p>
+              The <code className="font-mono text-gray-300 bg-gray-800 px-1 py-0.5 rounded">tmuxdeck-download</code> script lets you download files from containers
+              directly to your browser (e.g. build artifacts, logs, archives).
+            </p>
+            <p className="text-gray-300 font-medium">Usage:</p>
+            <pre className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-gray-300 overflow-x-auto">tmuxdeck-download /path/to/file.zip</pre>
+            <p>Any file type is supported, up to 20 MB.</p>
+          </div>
+        </section>
+
         {/* Keyboard Shortcuts */}
         <section>
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">

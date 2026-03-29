@@ -60,6 +60,10 @@ async def _inject_scripts(dm: "DockerManager", container_id: str) -> None:
     await dm.put_file(container_id, "/usr/local/bin", "tmuxdeck-notify", notify_script)
     await dm.exec_command(container_id, ["chmod", "+x", "/usr/local/bin/tmuxdeck-notify"])
 
+    download_script = _read_script("tmuxdeck-download")
+    await dm.put_file(container_id, "/usr/local/bin", "tmuxdeck-download", download_script)
+    await dm.exec_command(container_id, ["chmod", "+x", "/usr/local/bin/tmuxdeck-download"])
+
     for hook in ("tmuxdeck-hook-prompt", "tmuxdeck-hook-stop", "tmuxdeck-hook-notification"):
         script = _read_script(hook)
         await dm.put_file(container_id, "/usr/local/bin", hook, script)

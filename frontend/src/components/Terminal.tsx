@@ -23,6 +23,7 @@ interface TerminalProps {
   autoFocus?: boolean;
   visible?: boolean;
   onOpenFile?: (path: string) => void;
+  onDownloadFile?: (path: string) => void;
   onReady?: () => void;
   onSessionGone?: () => void;
   onActiveWindowChanged?: (sessionName: string, windowIndex: number) => void;
@@ -717,7 +718,7 @@ async function uploadAndInject(
   }
 }
 
-export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onReady, onSessionGone, onActiveWindowChanged, onWindowsChanged }, ref) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onDownloadFile, onReady, onSessionGone, onActiveWindowChanged, onWindowsChanged }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
   addToastRef.current = addToast;
@@ -731,6 +732,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const inScrollModeRef = useRef<{ current: boolean }>({ current: false });
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  const onDownloadFileRef = useRef(onDownloadFile);
+  onDownloadFileRef.current = onDownloadFile;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const onSessionGoneRef = useRef(onSessionGone);
@@ -845,6 +848,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const filePath = data.trim();
       if (filePath) {
         onOpenFileRef.current?.(filePath);
+      }
+      return true;
+    });
+
+    // Register custom OSC 7338 handler for tmuxdeck-download
+    const oscDownloadDisposable = term.parser.registerOscHandler(7338, (data) => {
+      const filePath = data.trim();
+      if (filePath) {
+        onDownloadFileRef.current?.(filePath);
       }
       return true;
     });
@@ -1172,6 +1184,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(momentumRafId);
       oscDisposable.dispose();
+      oscDownloadDisposable.dispose();
       osc52Disposable.dispose();
       selectionDisposable.dispose();
       linkDisposable.dispose();
