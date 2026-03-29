@@ -64,3 +64,45 @@ async def upload_image(container_id: str, file: UploadFile):
         await dm.put_file(container_id, DEST_DIR, filename, content)
 
     return {"path": dest_path}
+
+
+UPLOAD_DEST_DIR = "/tmp/claude-uploads"
+
+
+@router.post("/containers/{container_id}/upload-file")
+async def upload_file(container_id: str, file: UploadFile):
+    """Upload any file to the container and return its path."""
+    original = file.filename or "upload.bin"
+    ext = os.path.splitext(original)[1].lower()
+
+    content = await file.read()
+    if len(content) > MAX_SIZE:
+        raise HTTPException(413, "File exceeds 20 MB limit")
+
+    filename = _unique_filename(ext)
+    dest_path = f"{UPLOAD_DEST_DIR}/{filename}"
+
+    if _is_local(container_id) or _is_host(container_id):
+        os.makedirs(UPLOAD_DEST_DIR, exist_ok=True)
+        with open(dest_path, "wb") as f:
+            f.write(content)
+    elif is_bridge(container_id):
+        bm = BridgeManager.get()
+        conn = bm.get_bridge_for_container(container_id)
+        if not conn:
+            raise HTTPException(502, "Bridge not connected")
+        source = bridge_source_from_container(container_id)
+        encoded = base64.b64encode(content).decode("ascii")
+        result = await conn.request({
+            "type": "file_write",
+            "path": dest_path,
+            "data": encoded,
+            "source": source,
+        }, timeout=30)
+        if "error" in result:
+            raise HTTPException(500, result["error"])
+    else:
+        dm = DockerManager.get()
+        await dm.put_file(container_id, UPLOAD_DEST_DIR, filename, content)
+
+    return {"path": dest_path}

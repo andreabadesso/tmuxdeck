@@ -718,6 +718,37 @@ async function uploadAndInject(
   }
 }
 
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+async function uploadFileAndInject(
+  file: File,
+  containerId: string,
+  ws: WebSocket | null,
+  term: XTerm | null,
+) {
+  const formData = new FormData();
+  formData.append('file', file, file.name || 'upload.bin');
+  try {
+    const res = await fetch(`/api/v1/containers/${containerId}/upload-file`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText);
+      term?.writeln(`\r\n\x1b[1;31m[File upload failed: ${msg}]\x1b[0m`);
+      return;
+    }
+    const { path } = await res.json();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(shellEscape(path));
+    }
+  } catch (err) {
+    term?.writeln(`\r\n\x1b[1;31m[File upload error: ${err}]\x1b[0m`);
+  }
+}
+
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onDownloadFile, onReady, onSessionGone, onActiveWindowChanged, onWindowsChanged }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
@@ -1019,6 +1050,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       for (const file of e.dataTransfer.files) {
         if (IMAGE_TYPES.includes(file.type)) {
           uploadAndInject(file, containerId, wsRef.current, term);
+        } else {
+          uploadFileAndInject(file, containerId, wsRef.current, term);
         }
       }
     };
