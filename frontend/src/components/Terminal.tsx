@@ -898,8 +898,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (has) selectionTextRef.current = term.getSelection();
     });
 
-    // Double-click on wrapped lines: select the entire wrapped block
-    const handleDblClick = (e: MouseEvent) => {
+    // Triple-click on wrapped lines: select the entire wrapped block
+    const handleTripleClick = (e: MouseEvent) => {
+      if (e.detail !== 3) return;
       const buf = term.buffer.active;
       // Convert mouse Y to buffer row
       const cellHeight = container.clientHeight / term.rows;
@@ -920,7 +921,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       term.select(0, startRow, totalLen);
       e.preventDefault();
     };
-    container.addEventListener('dblclick', handleDblClick);
+    container.addEventListener('click', handleTripleClick);
 
     // Measure container (flex-sized) and fit terminal
     const fitAndResize = (retries = 3) => {
@@ -1174,7 +1175,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       osc52Disposable.dispose();
       selectionDisposable.dispose();
       linkDisposable.dispose();
-      container.removeEventListener('dblclick', handleDblClick);
+      container.removeEventListener('click', handleTripleClick);
       const cleanup = (wrapper as unknown as Record<string, (() => void) | undefined>).__wsCleanup;
       cleanup?.();
       wsRef.current = null;
