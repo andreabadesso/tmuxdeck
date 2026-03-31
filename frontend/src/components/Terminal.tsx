@@ -862,6 +862,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
       theme: THEME,
       allowProposedApi: true,
+      scrollback: 0,
     });
 
     // Suppress audible bell — swallow the event so the browser stays silent.
