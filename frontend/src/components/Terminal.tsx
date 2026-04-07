@@ -62,7 +62,7 @@ const THEME = {
 
 // --- Wrapped-line helpers for URL detection and text selection ---
 
-const URL_RE = /https?:\/\/[^\s"'<>{}|\\^`\[\]]+/g;
+const URL_RE = /https?:\/\/[^\s"'<>{}|\\^`[\]]+/g;
 
 /**
  * Given a buffer row, find the first and last row of the soft-wrapped block
@@ -752,7 +752,7 @@ async function uploadFileAndInject(
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ containerId, sessionName, windowIndex, autoFocus = true, visible = true, onOpenFile, onDownloadFile, onReady, onSessionGone, onActiveWindowChanged, onWindowsChanged }, ref) {
   const { addToast } = useToast();
   const addToastRef = useRef(addToast);
-  addToastRef.current = addToast;
+  useEffect(() => { addToastRef.current = addToast; });
   const wrapperRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -762,17 +762,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const windowIndexRef = useRef(windowIndex);
   const inScrollModeRef = useRef<{ current: boolean }>({ current: false });
   const onOpenFileRef = useRef(onOpenFile);
-  onOpenFileRef.current = onOpenFile;
   const onDownloadFileRef = useRef(onDownloadFile);
-  onDownloadFileRef.current = onDownloadFile;
   const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
   const onSessionGoneRef = useRef(onSessionGone);
-  onSessionGoneRef.current = onSessionGone;
   const onActiveWindowChangedRef = useRef(onActiveWindowChanged);
-  onActiveWindowChangedRef.current = onActiveWindowChanged;
   const onWindowsChangedRef = useRef(onWindowsChanged);
-  onWindowsChangedRef.current = onWindowsChanged;
+  useEffect(() => {
+    onOpenFileRef.current = onOpenFile;
+    onDownloadFileRef.current = onDownloadFile;
+    onReadyRef.current = onReady;
+    onSessionGoneRef.current = onSessionGone;
+    onActiveWindowChangedRef.current = onActiveWindowChanged;
+    onWindowsChangedRef.current = onWindowsChanged;
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [mouseWarning, setMouseWarning] = useState(false);
   const [bellWarning, setBellWarning] = useState<BellWarning | null>(null);
@@ -789,7 +791,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionTextRef = useRef('');
   const osc52TextRef = useRef<string | null>(null);
   const selectModeRef = useRef(false);
-  selectModeRef.current = selectMode;
+  useEffect(() => { selectModeRef.current = selectMode; });
   const selectStartRef = useRef<{ col: number; row: number } | null>(null);
   const [ctrlActive, setCtrlActive] = useState(false);
   const [shiftActive, setShiftActive] = useState(false);
@@ -798,9 +800,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const ctrlRef = useRef(false);
   const shiftRef = useRef(false);
   const altRef = useRef(false);
-  ctrlRef.current = ctrlActive;
-  shiftRef.current = shiftActive;
-  altRef.current = altActive;
+  useEffect(() => {
+    ctrlRef.current = ctrlActive;
+    shiftRef.current = shiftActive;
+    altRef.current = altActive;
+  });
 
   // Send current size to backend — skips if dimensions haven't changed
   // unless `force` is true (e.g. initial connection).
@@ -862,6 +866,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
       theme: THEME,
       allowProposedApi: true,
+      scrollback: 0,
     });
 
     // Suppress audible bell — swallow the event so the browser stays silent.
@@ -1238,9 +1243,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       wrapper.removeEventListener('touchend', handleTouchEnd);
       term.dispose();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- windowIndex changes are
-  // handled by the SELECT_WINDOW effect below; including it here would tear down the
-  // WebSocket connection instead of smoothly switching windows.
+  // windowIndex changes are handled by the SELECT_WINDOW effect below;
+  // including it here would tear down the WebSocket connection instead of smoothly switching windows.
   }, [containerId, sessionName, autoFocus, sendResize]);
 
   // Switch tmux windows without recreating the connection.
@@ -1318,6 +1322,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     let modifiedData = data;
     // CSI escape sequence like \x1b[A, \x1b[B, etc.
+    // eslint-disable-next-line no-control-regex -- matching CSI escape sequences requires \x1b
     const csiMatch = data.match(/^\x1b\[([A-D]|[0-9]+~)$/);
     if (csiMatch) {
       const modParam = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
